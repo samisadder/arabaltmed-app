@@ -1,0 +1,1096 @@
+{{>licenseInfo}}
+'use strict';
+
+// Module-level agent pool for connection reuse
+const agentPool = new Map();
+
+(function(root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    // AMD. Register as an anonymous module.
+    define(['axios', 'axios-cookiejar-support', 'https-proxy-agent', 'https', 'querystring', 'agentkeepalive', 'crypto', 'Authentication/MerchantConfig', 'Authentication/Logger', 'Authentication/Constants', 'Authentication/Authorization', 'Authentication/PayloadDigest', 'Authentication/MLEUtility'], factory);
+  } else if (typeof module === 'object' && module.exports) {
+    // CommonJS-like environments that support module.exports, like Node.
+    module.exports = factory(require('axios'), require('axios-cookiejar-support'), require('https-proxy-agent'), require('https'), require('querystring'), require('agentkeepalive'), require('crypto'), require('./authentication/core/MerchantConfig'), require('./authentication/logging/Logger'), require('./authentication/util/Constants'), require('./authentication/core/Authorization'), require('./authentication/payloadDigest/DigestGenerator'), require('./authentication/util/MLEUtility'));
+  } else {
+    // Browser globals (root is window)
+    if (!root.{{moduleName}}) {
+      root.{{moduleName}} = {};
+    }
+    root.{{moduleName}}.ApiClient = factory(root.axios, root.axiosCookieJar, root.httpsProxyAgent, root.https, root.querystring, root.AgentKeepAlive, root.crypto, root.Authentication.MerchantConfig, root.Authentication.Logger, root.Authentication.Constants, root.Authentication.Authorization, root.Authentication.PayloadDigest, root.Authentication.MLEUtility);
+  }
+}(this, function(axios, axiosCookieJar, HttpsProxyAgent, https, querystring, AgentKeepAlive, crypto, MerchantConfig, Logger, Constants, Authorization, PayloadDigest, MLEUtility) {
+{{#emitJSDoc}}  /**
+   * @module {{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient
+   * @version {{projectVersion}}
+   */
+
+  /**
+   * Manages low level client-server communications, parameter marshalling, etc. There should not be any need for an
+   * application to use this class directly - the *Api and model classes provide the public API for the service. The
+   * contents of this file should be regarded as internal but are documented for completeness.
+   * @alias module:{{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient
+   * @class
+   */
+{{/emitJSDoc}}  var exports = function() {
+{{#emitJSDoc}}    /**
+     * The base URL against which to resolve every API call's (relative) path.
+     * @type {String}
+     * @default {{{basePath}}}
+     */
+{{/emitJSDoc}}    this.basePath = '{{{basePath}}}'.replace(/\/+$/, '');
+
+{{#emitJSDoc}}    /**
+     * The authentication methods to be included for all API calls.
+     * @type {Array.<String>}
+     */
+{{/emitJSDoc}}{{=< >=}}    this.authentications = {
+<#authMethods>
+<#isBasic>
+      '<name>': {type: 'basic'}<^-last>,</-last>
+</isBasic>
+<#isApiKey>
+      '<name>': {type: 'apiKey', 'in': <#isKeyInHeader>'header'</isKeyInHeader><^isKeyInHeader>'query'</isKeyInHeader>, name: '<keyParamName>'}<^-last>,</-last>
+</isApiKey>
+<#isOAuth>
+      '<name>': {type: 'oauth2'}<^-last>,</-last>
+</isOAuth>
+</authMethods>
+    };
+<={{ }}=>
+{{#emitJSDoc}}    /**
+     * The default HTTP headers to be included for all API calls.
+     * @type {Array.<String>}
+     * @default {}
+     */
+{{/emitJSDoc}}    this.defaultHeaders = {};
+
+    /**
+     * The default HTTP timeout for all API calls.
+     * @type {Number}
+     * @default 60000
+     */
+    this.timeout = 60000;
+
+    /**
+     * If set to false an additional timestamp parameter is added to all API GET calls to
+     * prevent browser caching
+     * @type {Boolean}
+     * @default true
+     */
+    this.cache = true;
+
+{{#emitJSDoc}}    /**
+     * If set to true, the client will save the cookies from each server
+     * response, and return them in the next request.
+     * @default false
+     */
+{{/emitJSDoc}}    this.enableCookies = false;
+
+    /*
+     * Used to save and return cookies in a node.js (non-browser) setting,
+     * if this.enableCookies is set to true.
+     */
+    if (typeof window === 'undefined') {
+      const wrapper = require('axios-cookiejar-support').wrapper;
+      const toughCookieJar = require('tough-cookie').CookieJar;
+      wrapper(axios);
+      this.cookieJar = new toughCookieJar();
+    }
+
+    /**
+     * The filepath where reports are downloaded
+     */
+    this.downloadFilePath = '';
+
+    /**
+     * The user-defined Accept Header Type
+     */
+    this.acceptHeader = '';
+  };
+
+{{#emitJSDoc}}  /**
+   * Returns a string representation for an actual parameter.
+   * @param param The actual parameter.
+   * @returns {String} The string representation of <code>param</code>.
+   */
+{{/emitJSDoc}}  exports.prototype.paramToString = function(param) {
+    if (param == undefined || param == null) {
+      return '';
+    }
+    if (param instanceof Date) {
+      return param.toJSON();
+    }
+    return param.toString();
+  };
+
+{{#emitJSDoc}}  /**
+   * Builds full URL by appending the given path to the base URL and replacing path parameter place-holders with parameter values.
+   * NOTE: query parameters are not handled here.
+   * @param {String} path The path to append to the base URL.
+   * @param {Object} pathParams The parameter values to append.
+   * @returns {String} The encoded path with parameter values substituted.
+   */
+{{/emitJSDoc}}  exports.prototype.buildUrl = function(path, pathParams) {
+    if (!path.match(/^\//)) {
+      path = '/' + path;
+    }
+    var url = path;
+    var _this = this;
+    url = url.replace(/\{([\w-]+)\}/g, function(fullMatch, key) {
+      var value;
+      if (pathParams.hasOwnProperty(key)) {
+        value = _this.paramToString(pathParams[key]);
+      } else {
+        value = fullMatch;
+      }
+      return encodeURIComponent(value);
+    });
+    return url;
+  };
+
+{{#emitJSDoc}}  /**
+   * Checks whether the given content type represents JSON.<br>
+   * JSON content type examples:<br>
+   * <ul>
+   * <li>application/json</li>
+   * <li>application/json; charset=UTF8</li>
+   * <li>APPLICATION/JSON</li>
+   * </ul>
+   * @param {String} contentType The MIME content type to check.
+   * @returns {Boolean} <code>true</code> if <code>contentType</code> represents JSON, otherwise <code>false</code>.
+   */
+{{/emitJSDoc}}  exports.prototype.isJsonMime = function(contentType) {
+    return Boolean(contentType != null && contentType.match(/^application\/json(;.*)?$/i));
+  };
+
+{{#emitJSDoc}}  /**
+   * Chooses a content type from the given array, with JSON preferred; i.e. return JSON if included, otherwise return the first.
+   * @param {Array.<String>} contentTypes
+   * @returns {String} The chosen content type, preferring JSON.
+   */
+{{/emitJSDoc}}  exports.prototype.jsonPreferredMime = function(contentTypes) {
+    for (var i = 0; i < contentTypes.length; i++) {
+      if (this.isJsonMime(contentTypes[i])) {
+        return contentTypes[i];
+      }
+    }
+    return contentTypes[0];
+  };
+
+{{#emitJSDoc}}  /**
+   * Checks whether the given parameter value represents file-like content.
+   * @param param The parameter to check.
+   * @returns {Boolean} <code>true</code> if <code>param</code> represents a file.
+   */
+{{/emitJSDoc}}  exports.prototype.isFileParam = function(param) {
+    // fs.ReadStream in Node.js and Electron (but not in runtime like browserify)
+    if (typeof require === 'function') {
+      var fs;
+      try {
+        fs = require('fs');
+      } catch (err) {}
+      if (fs && fs.ReadStream && param instanceof fs.ReadStream) {
+        return true;
+      }
+    }
+    // Buffer in Node.js
+    if (typeof Buffer === 'function' && param instanceof Buffer) {
+      return true;
+    }
+    // Blob in browser
+    if (typeof Blob === 'function' && param instanceof Blob) {
+      return true;
+    }
+    // File in browser (it seems File object is also instance of Blob, but keep this for safe)
+    if (typeof File === 'function' && param instanceof File) {
+      return true;
+    }
+    return false;
+  };
+
+{{#emitJSDoc}}  /**
+   * Normalizes parameter values:
+   * <ul>
+   * <li>remove nils</li>
+   * <li>keep files and arrays</li>
+   * <li>format to string with `paramToString` for other cases</li>
+   * </ul>
+   * @param {Object.<String, Object>} params The parameters as object properties.
+   * @returns {Object.<String, Object>} normalized parameters.
+   */
+{{/emitJSDoc}}  exports.prototype.normalizeParams = function(params) {
+    var newParams = {};
+    for (var key in params) {
+      if (params.hasOwnProperty(key) && params[key] != undefined && params[key] != null) {
+        var value = params[key];
+        if (this.isFileParam(value) || Array.isArray(value)) {
+          newParams[key] = value;
+        } else {
+          newParams[key] = this.paramToString(value);
+        }
+      }
+    }
+    return newParams;
+  };
+
+{{#emitJSDoc}}  /**
+   * Enumeration of collection format separator strategies.
+   * @enum {String}
+   * @readonly
+   */
+  exports.CollectionFormatEnum = {
+    /**
+     * Comma-separated values. Value: <code>csv</code>
+     * @const
+     */
+    CSV: ',',
+    /**
+     * Space-separated values. Value: <code>ssv</code>
+     * @const
+     */
+    SSV: ' ',
+    /**
+     * Tab-separated values. Value: <code>tsv</code>
+     * @const
+     */
+    TSV: '\t',
+    /**
+     * Pipe(|)-separated values. Value: <code>pipes</code>
+     * @const
+     */
+    PIPES: '|',
+    /**
+     * Native array. Value: <code>multi</code>
+     * @const
+     */
+    MULTI: 'multi'
+  };
+
+  /**
+   * Builds a string representation of an array-type actual parameter, according to the given collection format.
+   * @param {Array} param An array parameter.
+   * @param {module:{{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient.CollectionFormatEnum} collectionFormat The array element separator strategy.
+   * @returns {String|Array} A string representation of the supplied collection, using the specified delimiter. Returns
+   * <code>param</code> as is if <code>collectionFormat</code> is <code>multi</code>.
+   */
+{{/emitJSDoc}}  exports.prototype.buildCollectionParam = function buildCollectionParam(param, collectionFormat) {
+    if (param == null) {
+      return null;
+    }
+    switch (collectionFormat) {
+      case 'csv':
+        return param.map(this.paramToString).join(',');
+      case 'ssv':
+        return param.map(this.paramToString).join(' ');
+      case 'tsv':
+        return param.map(this.paramToString).join('\t');
+      case 'pipes':
+        return param.map(this.paramToString).join('|');
+      case 'multi':
+        // return the array directly as SuperAgent will handle it as expected
+        return param.map(this.paramToString);
+      default:
+        throw new Error('Unknown collection format: ' + collectionFormat);
+    }
+  };
+
+{{#emitJSDoc}}  /**
+   * Applies authentication headers to the axiosConfig.
+   * @param {Object} axiosConfig The object to be used as configuration for <code>axios</code> API.
+   * @param {Array.<String>} authNames An array of authentication method names.
+   */
+{{/emitJSDoc}}  exports.prototype.applyAuthToRequest = function(axiosConfig, authNames) {
+    var _this = this;
+    authNames.forEach(function(authName) {
+      var auth = _this.authentications[authName];
+      switch (auth.type) {
+        case 'basic':
+          if (auth.username || auth.password) {
+            axiosConfig.auth(auth.username || '', auth.password || '');
+          }
+          break;
+        case 'apiKey':
+          if (auth.apiKey) {
+            var data = {};
+            if (auth.apiKeyPrefix) {
+              data[auth.name] = auth.apiKeyPrefix + ' ' + auth.apiKey;
+            } else {
+              data[auth.name] = auth.apiKey;
+            }
+            if (auth['in'] === 'header') {
+              axiosConfig.headers = data;
+            } else {
+              axiosConfig.params = data;
+            }
+          }
+          break;
+        case 'oauth2':
+          if (auth.accessToken) {
+            axiosConfig.headers['Authorization'] = 'Bearer ' + auth.accessToken;
+          }
+          break;
+        default:
+          throw new Error('Unknown authentication type: ' + auth.type);
+      }
+    });
+  };
+
+{{#emitJSDoc}}  /**
+   * Deserializes an HTTP response body into a value of the specified type.
+   * @param {Object} response A SuperAgent response object.
+   * @param {(String|Array.<String>|Object.<String, Object>|Function)} returnType The type to return. Pass a string for simple types
+   * or the constructor function for a complex type. Pass an array containing the type name to return an array of that type. To
+   * return an object, pass an object with one property whose name is the key type and whose value is the corresponding value type:
+   * all properties on <code>data<code> will be converted to this type.
+   * @returns A value of the specified type.
+   */
+{{/emitJSDoc}}  exports.prototype.deserialize = function deserialize(response, returnType) {
+    if (response == null || returnType == null || response.status == 204) {
+      return null;
+    }
+    // Rely on SuperAgent for parsing response body.
+    // See http://visionmedia.github.io/superagent/#parsing-response-bodies
+    var data = response.data;
+    if (data == null || (typeof data === 'object' && typeof data.length === 'undefined' && !Object.keys(data).length)) {
+      // SuperAgent does not always produce a body; use the unparsed response as a fallback
+      data = response.statusText;
+    }
+    return exports.convertToType(data, returnType);
+  };
+
+{{#emitJSDoc}}  /**
+   * Translates the Axios error into an error object that is backward compatible.
+   * @param {Object} error An Axios error object.
+   * @returns A backward compatible error object.
+   */
+{{/emitJSDoc}}  exports.prototype.translateError = function translateError(error) {
+    if (typeof error.response !== 'undefined') {
+      var tester = {};
+      tester.status = error.response.status;
+      tester.response = {};
+      tester.response.req = {};
+      tester.response.req.method = error.response.config.method;
+      tester.response.req.url = error.response.config.baseURL + error.response.config.url;
+      tester.response.req.data = error.response.config.data;
+      tester.response.req.headers = error.response.config.headers;
+      tester.response.header = error.response.headers;
+      tester.response.status = error.response.status;
+      tester.response.text = JSON.stringify(error.response.data);
+      return tester;
+    }else{
+      return error;
+    }
+  }
+
+{{#emitJSDoc}}  /**
+   * Translates the Axios 404 error into an error object that is backward compatible.
+   * @param {Object} error An Axios error object.
+   * @returns A backward compatible error object.
+   */
+{{/emitJSDoc}}  exports.prototype.translate404Error = function translate404Error(error) {
+    var tester = {};
+    tester.status = error.response.status;
+    tester.response = {};
+    tester.response.req = {};
+    tester.response.req.method = error.response.config.method;
+    tester.response.req.url = error.response.config.baseURL + error.response.config.url;
+    tester.response.req.headers = error.response.config.headers;
+    tester.response.header = error.response.headers;
+    tester.response.status = error.response.status;
+
+    try {
+      // 404 is caused by missing resource / resource not found
+      if (error.response.config.responseType != 'stream'){
+        tester.response.text = JSON.stringify(error.response.data);
+      } else { throw "Exception during streaming"; }
+    } catch(err) {
+      // 404 is caused by unexpected end of stream or stream not found
+      tester.response.text = error.message;
+    }
+    return tester;
+  }
+
+{{#emitJSDoc}}  /**
+   * Translates the Axios Proxy error into an error object that is backward compatible.
+   * @param {Object} error An Axios error object.
+   * @returns A backward compatible error object.
+   */
+{{/emitJSDoc}}  exports.prototype.translateProxyIssue = function translateProxyIssue(error) {
+    var tester = {};
+    tester.errno = error.errno;
+    tester.code = error.code;
+    tester.syscall = error.syscall;
+    tester.address = error.address;
+    tester.port = error.port;
+    return tester;
+  }
+
+{{#emitJSDoc}}  /**
+   * Translates the Axios response into a response object that is backward compatible.
+   * @param {Object} response An Axios response object.
+   * @returns A backward compatible response object.
+   */
+{{/emitJSDoc}}  exports.prototype.translateResponse = function translateResponse(response) {
+    var tester = {};
+    tester.req = {};
+    tester.req.method = response.config.method;
+    tester.req.url = response.config.baseURL + response.config.url;
+    tester.req.data = response.config.data;
+    tester.req.headers = response.config.headers;
+    tester.header = response.headers;
+    tester.status = response.status;
+    tester.text = JSON.stringify(response.data);
+    return tester;
+  }
+
+  /**
+   * Generates a configuration hash for agent caching
+   * @param {Object} config - Configuration object with connection parameters
+   * @returns {String} - Hash string representing the configuration
+   */
+  function generateConfigHash(config) {
+    const hashParts = [];
+    
+    // Add relevant configuration properties to the hash
+    if (config.useProxy) {
+      hashParts.push(`proxyUrl:${config.proxyUrl}`);
+    }
+    if (config.disableSSLVerification !== undefined) hashParts.push(`sslVerify:${!config.disableSSLVerification}`);
+    if (config.sslCaCert) hashParts.push(`sslCaCert:${config.sslCaCert}`);
+    if (config.enableClientCert) hashParts.push(`clientCert:${config.certFile}:${config.keyFile}`);
+    if (config.maxIdleSockets !== undefined) hashParts.push(`maxIdleSockets:${config.maxIdleSockets}`);
+    if (config.freeSocketTimeout !== undefined) hashParts.push(`freeSocketTimeout:${config.freeSocketTimeout}`);
+    
+    const concatenated = hashParts.join('|');
+    return crypto.createHash('sha256').update(concatenated).digest('hex');
+  }
+  
+  /**
+   * Gets or creates an HTTPS agent based on configuration
+   * @param {Object} config - Configuration object with connection parameters
+   * @returns {https.Agent} - HTTPS agent instance
+   */
+  function getOrCreateAgent(config) {
+    const configHash = generateConfigHash(config);
+    
+    if (agentPool.has(configHash)) {
+      return agentPool.get(configHash);
+    }
+    
+    const fs = require('fs');
+    
+    // Create agent options with keepAlive enabled
+    const agentOptions = {
+      keepAlive: true, // By default, keepAlive is true in agentkeepalive
+      maxSockets: config.maxIdleSockets,
+      freeSocketTimeout: config.freeSocketTimeout,
+      rejectUnauthorized: !config.disableSSLVerification,
+    };
+    
+    // Add SSL certificate if provided
+    if (config.sslCaCert) {
+      agentOptions.ca = fs.readFileSync(config.sslCaCert);
+    }
+    
+    // Add client certificates if enabled
+    if (config.enableClientCert) {
+      agentOptions.cert = fs.readFileSync(config.certFile);
+      agentOptions.key = fs.readFileSync(config.keyFile);
+    }
+    
+    // Use the HttpsAgent from the agentkeepalive package
+    const agent = new AgentKeepAlive.HttpsAgent(agentOptions);
+    agentPool.set(configHash, agent);
+    return agent;
+  }
+  
+  /**
+   * Gets or creates an HTTPS proxy agent based on configuration
+   * @param {String} proxyAddress - Proxy server address
+   * @param {Number} proxyPort - Proxy server port
+   * @param {String} proxyUser - Proxy authentication username (optional)
+   * @param {String} proxyPassword - Proxy authentication password (optional)
+   * @returns {HttpsProxyAgent} - HTTPS proxy agent instance
+   */
+  function getOrCreateProxyAgent(proxyAddress, proxyPort, proxyUser, proxyPassword, maxIdleSockets) {
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    
+    let proxyUrl;
+    if (proxyUser && proxyPassword) {
+      proxyUrl = `http://${proxyUser}:${proxyPassword}@${proxyAddress}:${proxyPort}`;
+    } else {
+      proxyUrl = `http://${proxyAddress}:${proxyPort}`;
+    }
+
+    const configHash = generateConfigHash({
+      useProxy: true,
+      proxyUrl: proxyUrl,
+      maxIdleSockets: maxIdleSockets
+    });
+
+    if (agentPool.has(configHash)) {
+      return agentPool.get(configHash);
+    }
+    
+    // Apply the same connection pooling settings as the regular HTTPS agent
+    const agentOptions = {
+      keepAlive: true, // Keep the connection alive
+      maxSockets: maxIdleSockets
+    };
+    
+    const agent = new HttpsProxyAgent(proxyUrl, agentOptions);
+    agentPool.set(configHash, agent);
+    return agent;
+  }
+
+    // Code added by Infosys dev team
+
+  /**
+   * This method will set the merchantConfig object global
+   *
+   * @param {Configuration} configObject merchantConfiguration properties.
+   */
+  exports.prototype.setConfiguration = function (configObject) {
+
+    this.merchantConfig = new MerchantConfig(configObject);
+    this.constants = Constants;
+    if(this.merchantConfig.getIntermediateHost()) {
+      if(this.merchantConfig.getIntermediateHost().startsWith(this.constants.HTTP_URL_PREFIX) ||
+        this.merchantConfig.getIntermediateHost().startsWith('http://')) {
+          this.basePath = this.merchantConfig.getIntermediateHost();
+      } else {
+        this.basePath = this.constants.HTTP_URL_PREFIX + this.merchantConfig.getIntermediateHost();
+      }
+    } else {
+      this.basePath = this.constants.HTTP_URL_PREFIX + this.merchantConfig.getRequestHost();
+    }
+    this.logger = Logger.getLogger(this.merchantConfig, 'ApiClient');
+  }
+
+  /**
+   * This method is to generate headers for http and jwt authentication.
+   *
+   * @param {String} httpMethod
+   * @param {String} requestTarget
+   * @param {String} requestBody
+   * @param {Boolean} isResponseMLEForApi
+   */
+  exports.prototype.callAuthenticationHeader = function (httpMethod, requestTarget, requestBody, headerParams, isResponseMLEForApi) {
+
+    this.merchantConfig.setRequestTarget(requestTarget);
+    this.merchantConfig.setRequestType(httpMethod)
+    this.merchantConfig.setRequestJsonData(requestBody);
+
+    this.logger.info('Authentication Type : ' + this.merchantConfig.getAuthenticationType());
+    this.logger.info(this.constants.REQUEST_TYPE + ' : ' + httpMethod.toUpperCase());
+
+    var token = Authorization.getToken(this.merchantConfig, isResponseMLEForApi, this.logger);
+
+    var clientId = getClientId();
+
+    headerParams['v-c-client-id'] = clientId;
+
+    // if (this.merchantConfig.getSolutionId() != null && this.merchantConfig.getSolutionId() != '') {
+      // headerParams['v-c-solution-id'] = this.merchantConfig.getSolutionId();
+    // }
+
+    if (this.merchantConfig.getAuthenticationType().toLowerCase() === this.constants.JWT) {
+      token = 'Bearer ' + token;
+      headerParams['Authorization'] = token;
+      this.logger.info(this.constants.AUTHORIZATION + ' : ' + token);
+    }
+    else if (this.merchantConfig.getAuthenticationType().toLowerCase() === this.constants.HTTP) {
+      var date = new Date(Date.now()).toUTCString();
+
+      if (httpMethod.toLowerCase() === this.constants.POST
+        || httpMethod.toLowerCase() === this.constants.PATCH
+        || httpMethod.toLowerCase() === this.constants.PUT) {
+        var digest = PayloadDigest.generateDigest(this.merchantConfig, this.logger);
+        digest = this.constants.SIGNATURE_ALGORITHAM + digest;
+        this.logger.info(this.constants.DIGEST + " : " + digest);
+        headerParams['digest'] = digest;
+      }
+
+      headerParams['v-c-merchant-id'] = this.merchantConfig.getMerchantID();
+      headerParams['date'] = date;
+      headerParams['host'] = this.merchantConfig.getRequestHost();
+      headerParams['signature'] = token;
+      headerParams['User-Agent'] = this.constants.USER_AGENT_VALUE;
+
+      this.logger.info('v-c-merchant-id : ' + this.merchantConfig.getMerchantID());
+      this.logger.info('date : ' + date);
+      this.logger.info('host : ' + this.merchantConfig.getRequestHost());
+      this.logger.info('signature : ' + token);
+      this.logger.info('User-Agent : ' + headerParams['User-Agent']);
+      this.logger.info(this.constants.END_TRANSACTION);
+    }
+    else if (this.merchantConfig.getAuthenticationType().toLowerCase() === this.constants.OAUTH) {
+      token = 'Bearer ' + token;
+      headerParams['Authorization'] = token;
+      // this.logger.info(this.constants.AUTHORIZATION + ' : ' + token);
+    }
+    headerParams['v-c-sdk-telemetry-merchant-id'] = this.merchantConfig.getMerchantID();
+    this.logger.info('v-c-sdk-telemetry-merchant-id : ' + this.merchantConfig.getMerchantID());
+    if(this.merchantConfig.isSDK()) {
+      headerParams['v-c-sdk-telemetry-mcp'] = true;
+      this.logger.info('v-c-sdk-telemetry-mcp : ' + true);
+    }
+
+    return headerParams;
+  }
+
+  function getClientId() {
+    var packageInfo = require('./../package.json');
+    return "cybs-rest-sdk-node-" + packageInfo.version;
+  }
+
+{{#emitJSDoc}}{{^usePromises}}  /**
+   * Callback function to receive the result of the operation.
+   * @callback module:{{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient~callApiCallback
+   * @param {String} error Error message, if any.
+   * @param data The data returned by the service call.
+   * @param {String} response The complete HTTP response.
+   */
+
+{{/usePromises}}  /**
+   * Invokes the REST service using the supplied settings and parameters.
+   * @param {String} path The base URL to invoke.
+   * @param {String} httpMethod The HTTP method to use.
+   * @param {Object.<String, String>} pathParams A map of path parameters and their values.
+   * @param {Object.<String, Object>} queryParams A map of query parameters and their values.
+   * @param {Object.<String, Object>} headerParams A map of header parameters and their values.
+   * @param {Object.<String, Object>} formParams A map of form parameters and their values.
+   * @param {Object} bodyParam The value to pass as the request body.
+   * @param {Array.<String>} authNames An array of authentication type names.
+   * @param {Array.<String>} contentTypes An array of request MIME types.
+   * @param {Array.<String>} accepts An array of acceptable response MIME types.
+   * @param {(String|Array|ObjectFunction)} returnType The required type to return; can be a string for simple types or the
+   * @param {Boolean} isResponseMLEForApi - Flag indicating if MLE is enabled for this API
+   * constructor for a complex type.{{^usePromises}}
+   * @param {module:{{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient~callApiCallback} callback The callback function.{{/usePromises}}
+   * @returns {{#usePromises}}{Promise} A {@link https://www.promisejs.org/|Promise} object{{/usePromises}}{{^usePromises}}{Object} The SuperAgent request object{{/usePromises}}.
+   */
+{{/emitJSDoc}}  exports.prototype.callApi = function callApi(path, httpMethod, pathParams,
+      queryParams, headerParams, formParams, bodyParam, authNames, contentTypes, accepts,
+      returnType, isResponseMLEForApi{{^usePromises}}, callback{{/usePromises}}) {
+
+    var _this = this;
+    var url = this.buildUrl(path, pathParams);
+    var useProxy = this.merchantConfig.getUseProxy();
+    var proxyAddress = this.merchantConfig.getProxyAddress();
+    var proxyPort = this.merchantConfig.getProxyPort();
+    var proxyUser = this.merchantConfig.getProxyUser();
+    var proxyPassword = this.merchantConfig.getProxyPassword();
+    var enableClientCert = this.merchantConfig.getEnableClientCert();
+    var sslCaCert = this.merchantConfig.getSslCaCert();
+    var isSslVerificationDisabled = this.merchantConfig.getDisableSSLVerification();
+    if(isSslVerificationDisabled == true){
+      this.logger.warn('SSL verification is disabled. This is not recommended for production environments.');
+    }
+
+    const CancelToken = axios.CancelToken;
+    const source = CancelToken.source();
+
+    var fslib = require('fs');
+    var pathlib = require('path');
+
+    var axiosConfig = {
+      baseURL: this.basePath,
+      method: httpMethod,
+      proxy: false,
+      headers: {}
+    };
+
+    // Use module-level connection pooling with keepAlive
+    if (useProxy && (proxyAddress != null && proxyAddress != '')) {
+      // Get or create a proxy agent from the pool
+      axiosConfig.httpsAgent = getOrCreateProxyAgent(proxyAddress, proxyPort, proxyUser, proxyPassword, this.merchantConfig.getMaxIdleSockets());
+    } else {
+      // Get or create an HTTPS agent from the pool
+      var certFile, keyFile;
+      
+      if (enableClientCert) {
+        certFile = pathlib.resolve(pathlib.join(this.merchantConfig.getClientCertDir(), this.merchantConfig.getSSLClientCert()));
+        keyFile = pathlib.resolve(pathlib.join(this.merchantConfig.getClientCertDir(), this.merchantConfig.getPrivateKey()));
+      }
+      
+      axiosConfig.httpsAgent = getOrCreateAgent({
+        disableSSLVerification: isSslVerificationDisabled,
+        sslCaCert: sslCaCert,
+        enableClientCert: enableClientCert,
+        certFile: certFile,
+        keyFile: keyFile,
+        useProxy: false,
+        maxIdleSockets: this.merchantConfig.getMaxIdleSockets(),
+        freeSocketTimeout: this.merchantConfig.getFreeSocketTimeout()
+      });
+    }
+
+    // apply authentications
+    this.applyAuthToRequest(axiosConfig, authNames);
+
+    // set query parameters
+    if (httpMethod.toLowerCase() === this.constants.GET && this.cache === false) {
+        queryParams['_'] = new Date().getTime();
+    }
+
+    /**
+     *added by infosys team, to generate requestTarget with pathParam
+     */
+    var requestTarget = this.buildRequestTarget(path, pathParams, queryParams);
+
+    if (httpMethod.toLowerCase() === this.constants.POST
+      || httpMethod.toLowerCase() === this.constants.PATCH
+      || httpMethod.toLowerCase() === this.constants.PUT) {
+      if (bodyParam !== "{}" && Object.keys(formParams).length <= 0) {
+        bodyParam = JSON.stringify(bodyParam, null, 0);
+      }
+    }
+
+    if (this.merchantConfig.getAuthenticationType().toLowerCase() !== this.constants.MUTUAL_AUTH)
+    {
+      headerParams = this.callAuthenticationHeader(httpMethod, requestTarget, bodyParam, headerParams, isResponseMLEForApi);
+    }
+
+    if(this.merchantConfig.getDefaultHeaders()) {
+      for (const [key, value] of Object.entries(this.merchantConfig.getDefaultHeaders())) {
+        headerParams[`${key}`] = `${value}`;
+      }
+    }
+
+    // set header parameters
+    for (const key in this.defaultHeaders) {
+      axiosConfig.headers[key] = this.defaultHeaders[`${key}`];
+    }
+
+    for (const key in headerParams) {
+      axiosConfig.headers[key] = headerParams[`${key}`];
+    }
+
+    // set request timeout
+    axiosConfig.timeout = this.timeout;
+
+    var contentType = this.jsonPreferredMime(contentTypes);
+    var contentTypeHeaderValue = '';
+    if (contentType) {
+      // Issue with superagent and multipart/form-data (https://github.com/visionmedia/superagent/issues/746)
+      if(contentType != 'multipart/form-data') {
+        contentTypeHeaderValue = contentType;
+      }
+    } else if (!contentTypeHeaderValue) {
+      contentTypeHeaderValue = 'application/json';
+    }
+
+    if (contentType === 'application/x-www-form-urlencoded') {
+      contentTypeHeaderValue = 'application/x-www-form-urlencoded';
+      axiosConfig.headers['Content-Type'] = contentTypeHeaderValue;
+      formParams = bodyParam;
+      axiosConfig.data = JSON.parse(formParams);
+    } else if (bodyParam && Object.keys(formParams).length <= 0) {
+      axiosConfig.data = JSON.parse(bodyParam);
+    } else if (bodyParam && Object.keys(formParams).length > 0) {
+      axiosConfig.data = bodyParam;
+      axiosConfig.headers['Content-Type'] = contentType;
+    }
+
+    var accept = this.jsonPreferredMime(accepts);
+
+    if (this.acceptHeader) {
+      accept = this.acceptHeader;
+    }
+
+    if (accept) {
+      axiosConfig.headers['Accept'] = accept;
+      /* Code for downloading file from stream */
+      if (accept === 'application/xml' || accept === 'text/csv') {
+        if (accept === 'application/xml') {
+          this.downloadFilePath = this.downloadFilePath + '.xml';
+        } else {
+          this.downloadFilePath = this.downloadFilePath + '.csv';
+        }
+
+        var fs = require('fs');
+        var stream = fs.createWriteStream(this.downloadFilePath);
+        axiosConfig.method = 'GET';
+        axiosConfig.responseType = 'stream';
+        axiosConfig.url = requestTarget;
+        axiosConfig.cancelToken = source.token;
+        axios.request(axiosConfig).then(function(response) {
+          response.data.pipe(stream);
+        }).catch(function(error,response) {
+          var userError = {};
+          if (error.code && error.code == "ECONNREFUSED") {
+            userError = _this.translateProxyIssue(error);
+          } else if (error.code && error.code == "ERR_BAD_REQUEST") {
+            userError = _this.translate404Error(error);
+            response = userError.response;
+          } else if (error.code && error.code == "ETIMEDOUT") {
+            userError = _this.translateProxyIssue(error);
+          } else {
+            userError = _this.translateError(error);
+            response = userError.response;
+          }
+        });
+
+      }
+    }
+
+    if (returnType === 'Blob') {
+      axiosConfig.responseType = 'blob';
+    } else if (returnType === 'String') {
+      axiosConfig.responseType = 'string';
+    }
+
+    // Attach previously saved cookies, if enabled
+    if (this.enableCookies){
+      axiosConfig.jar = this.cookieJar;
+    }
+
+    axiosConfig.url = requestTarget;
+
+{{#usePromises}}    return axios.request(axiosConfig).then(function(response) {
+      // Properly wait for the decryption to complete before proceeding
+      return MLEUtility.checkAndDecryptEncryptedResponse(response.data, _this.merchantConfig)
+        .then(function(decryptedData) {
+          response.data = decryptedData;
+          
+          try {
+            var data = _this.deserialize(response, returnType);
+            _this.logger.debug(`Response data: ${JSON.stringify(data)}`);
+            response = _this.translateResponse(response);
+
+            resolve({data: data, response: response});
+          } catch(err) {
+              reject(err);
+          }
+        })
+        .catch(function(error) {
+          // Create a simple error object with descriptive message
+          const errorMsg = `Failed to decrypt response: ${error.message}`;
+          
+          // Reject the promise for Promise-based usage
+          return Promise.reject(new Error(errorMsg));
+        });
+    }).catch(function(error, response) {
+      source.cancel('Stream ended.');
+      return MLEUtility.checkAndDecryptEncryptedResponse(error.response.data, _this.merchantConfig)
+        .then(function(decryptedData) {
+          error.response.data = decryptedData;
+          var userError = {};
+          if (error.code && error.code == "ECONNREFUSED") {
+            userError = _this.translateProxyIssue(error);
+          } else if (error.code && error.code == "ERR_BAD_REQUEST") {
+            userError = _this.translate404Error(error);
+            response = userError.response;
+          } else if (error.code && error.code == "ETIMEDOUT") {
+            userError = _this.translateProxyIssue(error);
+          } else {
+            userError = _this.translateError(error);
+            response = userError.response;
+          }
+
+          reject(userError);
+        })
+        .catch(function(error) {
+          // Create a simple error object with descriptive message
+          const errorMsg = `Failed to decrypt response: ${error.message}`;
+          
+          // Reject the promise for Promise-based usage
+          return Promise.reject(new Error(errorMsg));
+        });
+    });
+{{/usePromises}}
+{{^usePromises}}    axios.request(axiosConfig).then(function(response) {
+      // Properly wait for the decryption to complete before proceeding
+      MLEUtility.checkAndDecryptEncryptedResponse(response.data, _this.merchantConfig)
+        .then(function(decryptedData) {
+          response.data = decryptedData;
+          
+          if (callback) {
+            var data = _this.deserialize(response, returnType);
+            _this.logger.debug(`Response data: ${JSON.stringify(data)}`);
+            response = _this.translateResponse(response);
+
+            callback(null, data, response);
+          }
+        })
+        .catch(function(error) {
+          // Create a simple error object with descriptive message
+          const errorMsg = `Failed to decrypt response: ${error.message}`;
+          
+          if (callback) {
+            callback(new Error(errorMsg), null, null);
+          }
+        });
+    }).catch(function(error, response) {
+      source.cancel('Stream ended.');
+      MLEUtility.checkAndDecryptEncryptedResponse(error.response.data, _this.merchantConfig)
+        .then(function(decryptedData) {
+          error.response.data = decryptedData;
+          var userError = {};
+          if (error.code && error.code == "ECONNREFUSED") {
+            userError = _this.translateProxyIssue(error);
+          } else if (error.code && error.code == "ERR_BAD_REQUEST") {
+            userError = _this.translate404Error(error);
+            response = userError.response;
+          } else if (error.code && error.code == "ETIMEDOUT") {
+            userError = _this.translateProxyIssue(error);
+          } else {
+            userError = _this.translateError(error);
+            response = userError.response;
+          }
+
+          callback(userError, null, response);
+        })
+        .catch(function(error) {
+          // Create a simple error object with descriptive message in case decryption of error message has failed.
+          const errorMsg = `Failed to decrypt error response: ${error.message}`;
+          
+          if (callback) {
+            callback(new Error(errorMsg), null, null);
+          }
+        });
+    });
+
+{{/usePromises}}  };
+
+  /**
+   * Build request target required for the signature generation
+   * @param {String} path
+   * @param {Object} pathParams
+   */
+  exports.prototype.buildRequestTarget = function (path, pathParams, queryParams) {
+    if (!path.match(/^\//)) {
+      path = '/' + path;
+    }
+
+    var _this = this;
+    var requestTarget = path.replace(/\{([\w-]+)\}/g, function (fullMatch, key) {
+      var value;
+      if (pathParams.hasOwnProperty(key)) {
+        value = _this.paramToString(pathParams[key]);
+      } else {
+        value = fullMatch;
+      }
+      return encodeURIComponent(value);
+    });
+
+    // added by infosys team, to generate requestTarget with queryParams
+    if (Object.keys(queryParams).length !== 0) {
+      var queryFlag = false;
+      var queryArray = [];
+      Object.keys(queryParams).forEach(function (prop) {
+        var val = queryParams[prop];
+
+        if (val !== undefined) {
+          queryArray[prop] = val;
+          queryFlag = true;
+        }
+      });
+      if (queryFlag)
+        requestTarget = requestTarget + '?' + querystring.stringify(queryArray);
+    }
+    return requestTarget;
+  };
+
+{{#emitJSDoc}}  /**
+   * Parses an ISO-8601 string representation of a date value.
+   * @param {String} str The date value as a string.
+   * @returns {Date} The parsed date object.
+   */
+{{/emitJSDoc}}  exports.parseDate = function(str) {
+    return new Date(str.replace(/T/i, ' '));
+  };
+
+{{#emitJSDoc}}  /**
+   * Converts a value to the specified type.
+   * @param {(String|Object)} data The data to convert, as a string or object.
+   * @param {(String|Array.<String>|Object.<String, Object>|Function)} type The type to return. Pass a string for simple types
+   * or the constructor function for a complex type. Pass an array containing the type name to return an array of that type. To
+   * return an object, pass an object with one property whose name is the key type and whose value is the corresponding value type:
+   * all properties on <code>data<code> will be converted to this type.
+   * @returns An instance of the specified type or null or undefined if data is null or undefined.
+   */
+{{/emitJSDoc}}  exports.convertToType = function(data, type) {
+    if (data === null || data === undefined)
+      return data
+
+    switch (type) {
+      case 'Boolean':
+        return Boolean(data);
+      case 'Integer':
+        return parseInt(data, 10);
+      case 'Number':
+        return parseFloat(data);
+      case 'String':
+        return String(data);
+      case 'Date':
+        return this.parseDate(String(data));
+      case 'Blob':
+          return data;
+      default:
+        if (type === Object) {
+          // generic object, return directly
+          return data;
+        } else if (typeof type === 'function') {
+          // for model type like: User
+          return type.constructFromObject(data);
+        } else if (Array.isArray(type)) {
+          // for array type like: ['String']
+          var itemType = type[0];
+          return data.map(function(item) {
+            return exports.convertToType(item, itemType);
+          });
+        } else if (typeof type === 'object') {
+          // for plain object type like: {'String': 'Integer'}
+          var keyType, valueType;
+          for (var k in type) {
+            if (type.hasOwnProperty(k)) {
+              keyType = k;
+              valueType = type[k];
+              break;
+            }
+          }
+          var result = {};
+          for (var k in data) {
+            if (data.hasOwnProperty(k)) {
+              var key = exports.convertToType(k, keyType);
+              var value = exports.convertToType(data[k], valueType);
+              result[key] = value;
+            }
+          }
+          return result;
+        } else {
+          // for unknown type, return the data directly
+          return data;
+        }
+    }
+  };
+
+{{#emitJSDoc}}  /**
+   * Constructs a new map or array model from REST data.
+   * @param data {Object|Array} The REST data.
+   * @param obj {Object|Array} The target object or array.
+   */
+{{/emitJSDoc}}  exports.constructFromObject = function(data, obj, itemType) {
+    if (Array.isArray(data)) {
+      for (var i = 0; i < data.length; i++) {
+        if (data.hasOwnProperty(i))
+          obj[i] = exports.convertToType(data[i], itemType);
+      }
+    } else {
+      for (var k in data) {
+        if (data.hasOwnProperty(k))
+          obj[k] = exports.convertToType(data[k], itemType);
+      }
+    }
+  };
+
+{{#emitJSDoc}}  /**
+   * The default API client implementation.
+   * @type {module:{{#invokerPackage}}{{invokerPackage}}/{{/invokerPackage}}ApiClient}
+   */
+{{/emitJSDoc}}  exports.instance = new exports();
+
+  return exports;
+}));
