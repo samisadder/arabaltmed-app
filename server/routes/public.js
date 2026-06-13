@@ -154,6 +154,7 @@ router.post('/invoice/:token/pay', async (req, res) => {
     }
 
     const db = await pool.connect();
+    let dbCommitted = false;
     try {
       await db.query('BEGIN');
 
@@ -167,10 +168,11 @@ router.post('/invoice/:token/pay', async (req, res) => {
       await db.query(
         `INSERT INTO payments
            (invoice_id, amount, currency, transaction_id, status, processor_response)
-         VALUES ($1, $2, 'USD', $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           invoice.id,
           invoice.total,
+          invoice.currency || 'USD',
           paymentData.id || null,
           cyberStatus,
           JSON.stringify(paymentData),
@@ -178,9 +180,15 @@ router.post('/invoice/:token/pay', async (req, res) => {
       );
 
       await db.query('COMMIT');
+      dbCommitted = true;
     } catch (dbErr) {
-      await db.query('ROLLBACK');
-      console.error('DB error after successful payment — manual reconciliation required', dbErr);
+      await db.query('ROLLBACK').catch(() => {});
+      console.error('DB error after successful CyberSource payment — transaction ID:', paymentData.id, dbErr);
+      return res.status(500).json({
+        error:
+          'Payment was authorised by the payment gateway but could not be recorded. ' +
+          'Please contact support with transaction ID: ' + (paymentData.id || 'unknown'),
+      });
     } finally {
       db.release();
     }

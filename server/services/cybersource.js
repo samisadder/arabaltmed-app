@@ -81,8 +81,8 @@ export async function processPayment({
     },
     orderInformation: {
       amountDetails: {
-        totalAmount: String(Number(invoice.total_amount).toFixed(2)),
-        currency: 'USD',
+        totalAmount: String(Number(invoice.total).toFixed(2)),
+        currency: invoice.currency || 'USD',
       },
       billTo: {
         firstName,
