@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.js';
 import invoiceRoutes from './routes/invoices.js';
+import publicRoutes from './routes/public.js';
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment secret is not set. Set it in Replit Secrets before starting the server.');
@@ -31,6 +32,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/public', publicRoutes);
 
 app.use((err, req, res, _next) => {
   console.error(err);
