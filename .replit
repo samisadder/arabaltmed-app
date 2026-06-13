@@ -5,3 +5,40 @@ stack = "BEST_EFFORT_FALLBACK"
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+PORT = "3001"
+CLIENT_PORT = "5000"
+NODE_ENV = "development"
+PUBLIC_INVOICE_DOMAIN = "https://payments.arabaltmed.com"
+JWT_SECRET = "78f63aa301c1dbeff7a64f2044aba82f412985064aaf879c651cae99327538c782cdd5ef1a6db0917a4bb83a2d97fb9f"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
