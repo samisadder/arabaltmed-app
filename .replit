@@ -13,7 +13,6 @@ PORT = "3001"
 CLIENT_PORT = "5000"
 NODE_ENV = "development"
 PUBLIC_INVOICE_DOMAIN = "https://payments.arabaltmed.com"
-JWT_SECRET = "78f63aa301c1dbeff7a64f2044aba82f412985064aaf879c651cae99327538c782cdd5ef1a6db0917a4bb83a2d97fb9f"
 
 [workflows]
 runButton = "Project"

@@ -3,6 +3,11 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.js';
 
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment secret is not set. Set it in Replit Secrets before starting the server.');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

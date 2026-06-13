@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import pool from './db.js';
 import bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 
 async function migrate() {
   const client = await pool.connect();
@@ -75,12 +76,20 @@ async function migrate() {
     );
 
     if (existing.rows.length === 0) {
-      const hash = await bcrypt.hash('Admin@1234', 12);
+      const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD
+        || randomBytes(12).toString('base64url');
+
+      const hash = await bcrypt.hash(bootstrapPassword, 12);
       await client.query(
         'INSERT INTO admins (email, password_hash, name) VALUES ($1, $2, $3)',
         ['admin@arabaltmed.com', hash, 'Administrator']
       );
-      console.log('Default admin seeded: admin@arabaltmed.com / Admin@1234');
+      console.log('='.repeat(60));
+      console.log('Admin account created:');
+      console.log('  Email:    admin@arabaltmed.com');
+      console.log(`  Password: ${bootstrapPassword}`);
+      console.log('Save this password — it will not be shown again.');
+      console.log('='.repeat(60));
     } else {
       console.log('Admin already exists, skipping seed.');
     }
