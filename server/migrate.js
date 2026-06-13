@@ -70,6 +70,10 @@ async function migrate() {
 
     console.log('Tables created.');
 
+    await client.query(`
+      ALTER TABLE payments ALTER COLUMN status TYPE VARCHAR(64);
+    `);
+
     const existing = await client.query(
       'SELECT id FROM admins WHERE email = $1',
       ['admin@arabaltmed.com']
