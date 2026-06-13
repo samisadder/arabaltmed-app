@@ -62,7 +62,7 @@ async function migrate() {
         transaction_id VARCHAR(255),
         amount DECIMAL(12,2) NOT NULL,
         currency VARCHAR(3) DEFAULT 'USD',
-        status VARCHAR(20),
+        status VARCHAR(64),
         processor_response JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
