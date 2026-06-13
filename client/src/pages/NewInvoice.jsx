@@ -26,7 +26,6 @@ const s = {
   btnDraft: { padding: '10px 22px', background: '#fff', border: '1.5px solid #2563eb', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#2563eb' },
   btnSend: { padding: '10px 22px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
   error: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 },
-  helpText: { fontSize: 12, color: '#64748b', marginTop: 4 },
 };
 
 const emptyItem = () => ({ description: '', quantity: '1', unitPrice: '' });
@@ -40,6 +39,7 @@ export default function NewInvoice() {
   const [items, setItems] = useState([emptyItem()]);
   const [taxRate, setTaxRate] = useState('0');
   const [loading, setLoading] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [error, setError] = useState('');
 
   function updateItem(idx, field, value) {
@@ -55,24 +55,29 @@ export default function NewInvoice() {
   const taxAmount = subtotal * (parseFloat(taxRate) || 0) / 100;
   const total = subtotal + taxAmount;
 
-  async function handleSubmit(sendNow) {
-    setError('');
+  function buildPayload() {
     const validItems = items.filter(it => it.description.trim() && it.unitPrice);
-    if (!validItems.length) { setError('Add at least one line item with a description and price.'); return; }
+    if (!validItems.length) return null;
+    return {
+      clientName, clientEmail,
+      items: validItems.map(it => ({
+        description: it.description,
+        quantity: parseFloat(it.quantity) || 1,
+        unitPrice: parseFloat(it.unitPrice),
+      })),
+      dueDate: dueDate || undefined,
+      notes: notes || undefined,
+      taxRate: parseFloat(taxRate) || 0,
+    };
+  }
+
+  async function handleDraft() {
+    setError('');
+    const payload = buildPayload();
+    if (!payload) { setError('Add at least one line item with a description and price.'); return; }
     setLoading(true);
     try {
-      const data = await api.invoices.create({
-        clientName, clientEmail,
-        items: validItems.map(it => ({
-          description: it.description,
-          quantity: parseFloat(it.quantity) || 1,
-          unitPrice: parseFloat(it.unitPrice),
-        })),
-        dueDate: dueDate || undefined,
-        notes: notes || undefined,
-        taxRate: parseFloat(taxRate) || 0,
-        sendNow,
-      });
+      const data = await api.invoices.create(payload);
       navigate(`/admin/invoices/${data.invoice.id}`);
     } catch (err) {
       setError(err.message);
@@ -80,6 +85,30 @@ export default function NewInvoice() {
       setLoading(false);
     }
   }
+
+  async function handleSend() {
+    setError('');
+    const payload = buildPayload();
+    if (!payload) { setError('Add at least one line item with a description and price.'); return; }
+    setSendingEmail(true);
+    let invoiceId;
+    try {
+      const created = await api.invoices.create(payload);
+      invoiceId = created.invoice.id;
+      await api.invoices.send(invoiceId);
+      navigate(`/admin/invoices/${invoiceId}`, { state: { toast: `Invoice sent to ${clientEmail}` } });
+    } catch (err) {
+      if (invoiceId) {
+        navigate(`/admin/invoices/${invoiceId}`, { state: { sendError: err.message } });
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
+  const busy = loading || sendingEmail;
 
   return (
     <Layout title="New Invoice">
@@ -158,14 +187,14 @@ export default function NewInvoice() {
       </div>
 
       <div style={s.actions}>
-        <button type="button" style={s.btnCancel} onClick={() => navigate('/admin/dashboard')} disabled={loading}>
+        <button type="button" style={s.btnCancel} onClick={() => navigate('/admin/dashboard')} disabled={busy}>
           Cancel
         </button>
-        <button type="button" style={s.btnDraft} onClick={() => handleSubmit(false)} disabled={loading}>
+        <button type="button" style={s.btnDraft} onClick={handleDraft} disabled={busy}>
           {loading ? 'Saving…' : 'Save as Draft'}
         </button>
-        <button type="button" style={s.btnSend} onClick={() => handleSubmit(true)} disabled={loading}>
-          {loading ? 'Saving…' : 'Send Invoice'}
+        <button type="button" style={s.btnSend} onClick={handleSend} disabled={busy}>
+          {sendingEmail ? 'Sending…' : 'Send Invoice'}
         </button>
       </div>
     </Layout>

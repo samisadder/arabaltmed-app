@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
+import Toast from '../components/Toast.jsx';
 import { api } from '../lib/api.js';
 
 const STATUS_COLORS = {
@@ -66,12 +67,14 @@ function fmtDate(d) {
 export default function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [invoice, setInvoice] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payments.arabaltmed.com';
 
@@ -81,6 +84,31 @@ export default function InvoiceDetail() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (location.state?.toast) {
+      setToast({ message: location.state.toast, variant: 'success' });
+      window.history.replaceState({}, '');
+    }
+    if (location.state?.sendError) {
+      setError(`Email failed: ${location.state.sendError} — Invoice saved as draft.`);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
+
+  async function handleSend() {
+    setActionLoading(true);
+    setError('');
+    try {
+      const data = await api.invoices.send(id);
+      setInvoice(prev => ({ ...prev, ...data.invoice }));
+      setToast({ message: `Invoice sent to ${invoice.client_email}`, variant: 'success' });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   async function handleDelete() {
     if (!window.confirm('Permanently delete this draft invoice? This cannot be undone.')) return;
@@ -99,7 +127,7 @@ export default function InvoiceDetail() {
     setActionLoading(true);
     try {
       const data = await api.invoices.update(id, { status: 'void' });
-      setInvoice(data.invoice);
+      setInvoice(prev => ({ ...prev, ...data.invoice }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -120,6 +148,8 @@ export default function InvoiceDetail() {
 
   const publicUrl = `${publicDomain}/invoice/${invoice.public_token}`;
   const isDraft = invoice.status === 'draft';
+  const canSend = ['draft', 'sent', 'overdue'].includes(invoice.status);
+  const isSent = invoice.status === 'sent' || invoice.status === 'overdue';
   const isVoidable = ['draft', 'sent', 'overdue'].includes(invoice.status);
 
   const statusHistory = [
@@ -132,6 +162,13 @@ export default function InvoiceDetail() {
 
   return (
     <Layout title={invoice.invoice_number}>
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onDismiss={() => setToast(null)}
+        />
+      )}
       {error && <div style={s.error}>{error}</div>}
 
       <div style={s.topRow}>
@@ -141,6 +178,11 @@ export default function InvoiceDetail() {
         </div>
         <div style={s.actions}>
           <button style={s.btn()} onClick={() => navigate('/admin/dashboard')}>← Back</button>
+          {canSend && (
+            <button style={s.btn('primary')} onClick={handleSend} disabled={actionLoading}>
+              {actionLoading ? 'Sending…' : isSent ? '↺ Resend Invoice' : '✉ Send Invoice'}
+            </button>
+          )}
           {isVoidable && (
             <button style={s.btn('warn')} onClick={handleVoid} disabled={actionLoading}>
               Void Invoice
