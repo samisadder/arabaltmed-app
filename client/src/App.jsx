@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import NewInvoice from './pages/NewInvoice.jsx';
+import InvoiceDetail from './pages/InvoiceDetail.jsx';
 import { isLoggedIn } from './lib/api.js';
 
 function PrivateRoute({ children }) {
@@ -14,14 +16,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/login" element={<Login />} />
-        <Route
-          path="/admin/dashboard"
-          element={
-            <PrivateRoute>
-              <Dashboard />
-            </PrivateRoute>
-          }
-        />
+        <Route path="/admin/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+        <Route path="/admin/invoices/new" element={<PrivateRoute><NewInvoice /></PrivateRoute>} />
+        <Route path="/admin/invoices/:id" element={<PrivateRoute><InvoiceDetail /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

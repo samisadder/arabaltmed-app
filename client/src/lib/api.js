@@ -10,11 +10,15 @@ async function request(path, options = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
 
-  if (!res.ok) {
-    throw new Error(data.error || `HTTP ${res.status}`);
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/admin/login';
+    throw new Error('Session expired');
   }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
 
@@ -25,6 +29,14 @@ export const api = {
   me: () => request('/auth/me'),
 
   health: () => request('/health'),
+
+  invoices: {
+    list: () => request('/invoices'),
+    get: (id) => request(`/invoices/${id}`),
+    create: (data) => request('/invoices', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/invoices/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' }),
+  },
 };
 
 export function isLoggedIn() {
