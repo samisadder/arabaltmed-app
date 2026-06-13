@@ -13,7 +13,6 @@ PORT = "3001"
 CLIENT_PORT = "5000"
 NODE_ENV = "development"
 PUBLIC_INVOICE_DOMAIN = "https://payments.arabaltmed.com"
-JWT_SECRET = "287c2629c0685e15146c1be6278d765df90e0947f1bb04f6ddcde9bba87b581669571dca8092ee5b29e1cd7cd9a2de7b"
 
 [workflows]
 runButton = "Project"
@@ -31,13 +30,13 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash start.sh"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000
