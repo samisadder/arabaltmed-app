@@ -8,8 +8,10 @@ import {
 
 const router = Router();
 
-async function getInvoiceByToken(token) {
-  const { rows } = await pool.query(
+const PAYABLE_STATUSES = ['sent', 'overdue'];
+
+async function getInvoiceByToken(dbClient, token) {
+  const { rows } = await dbClient.query(
     `SELECT i.*, c.name AS client_name, c.email AS client_email
      FROM invoices i
      JOIN clients c ON c.id = i.client_id
@@ -29,7 +31,7 @@ async function getInvoiceItems(invoiceId) {
 
 router.get('/invoice/:token', async (req, res) => {
   try {
-    const invoice = await getInvoiceByToken(req.params.token);
+    const invoice = await getInvoiceByToken(pool, req.params.token);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
     const items = await getInvoiceItems(invoice.id);
@@ -64,7 +66,7 @@ router.get('/invoice/:token', async (req, res) => {
   }
 });
 
-router.get('/invoice/:token/capture-context', async (req, res) => {
+async function handleCaptureContext(req, res) {
   try {
     if (!isCyberSourceConfigured()) {
       return res
@@ -72,10 +74,10 @@ router.get('/invoice/:token/capture-context', async (req, res) => {
         .json({ error: 'Payment gateway is not configured' });
     }
 
-    const invoice = await getInvoiceByToken(req.params.token);
+    const invoice = await getInvoiceByToken(pool, req.params.token);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    if (!['sent', 'overdue'].includes(invoice.status)) {
+    if (!PAYABLE_STATUSES.includes(invoice.status)) {
       return res
         .status(400)
         .json({ error: 'Invoice is not in a payable state' });
@@ -98,53 +100,83 @@ router.get('/invoice/:token/capture-context', async (req, res) => {
     } catch {}
     res.status(502).json({ error: message });
   }
-});
+}
+
+router.get('/invoice/:token/flex-key', handleCaptureContext);
+router.get('/invoice/:token/capture-context', handleCaptureContext);
 
 router.post('/invoice/:token/pay', async (req, res) => {
+  if (!isCyberSourceConfigured()) {
+    return res
+      .status(502)
+      .json({ error: 'Payment gateway is not configured' });
+  }
+
+  const { transientToken, cardholderName, expMonth, expYear } = req.body;
+
+  if (!transientToken) {
+    return res.status(400).json({ error: 'Payment token is required' });
+  }
+  if (!expMonth || !expYear) {
+    return res
+      .status(400)
+      .json({ error: 'Card expiry month and year are required' });
+  }
+
+  const db = await pool.connect();
   try {
-    if (!isCyberSourceConfigured()) {
-      return res
-        .status(502)
-        .json({ error: 'Payment gateway is not configured' });
+    await db.query('BEGIN');
+
+    const { rows } = await db.query(
+      `SELECT i.*, c.name AS client_name, c.email AS client_email
+       FROM invoices i
+       JOIN clients c ON c.id = i.client_id
+       WHERE i.public_token = $1
+       FOR UPDATE`,
+      [req.params.token]
+    );
+
+    const invoice = rows[0];
+    if (!invoice) {
+      await db.query('ROLLBACK');
+      return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    const invoice = await getInvoiceByToken(req.params.token);
-    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-
-    if (!['sent', 'overdue'].includes(invoice.status)) {
+    if (!PAYABLE_STATUSES.includes(invoice.status)) {
+      await db.query('ROLLBACK');
       return res
-        .status(400)
+        .status(409)
         .json({ error: 'Invoice is not in a payable state' });
     }
 
-    const { transientToken, cardholderName, expMonth, expYear } = req.body;
-
-    if (!transientToken) {
-      return res.status(400).json({ error: 'Payment token is required' });
+    let paymentData;
+    try {
+      const result = await processPayment({
+        invoice,
+        transientToken,
+        cardholderName: (cardholderName || invoice.client_name || 'Card Holder').trim(),
+        expMonth: String(expMonth).padStart(2, '0'),
+        expYear: String(expYear),
+      });
+      paymentData = result.data;
+    } catch (cyberErr) {
+      await db.query('ROLLBACK');
+      let message = 'Payment processing failed';
+      try {
+        const parsed = JSON.parse(cyberErr?.response?.text || '{}');
+        if (parsed.message) message = parsed.message;
+        else if (parsed.errorInformation?.message)
+          message = parsed.errorInformation.message;
+      } catch {}
+      return res.status(502).json({ error: message });
     }
-    if (!expMonth || !expYear) {
-      return res
-        .status(400)
-        .json({ error: 'Card expiry month and year are required' });
-    }
-
-    const { data: paymentData } = await processPayment({
-      invoice,
-      transientToken,
-      cardholderName: cardholderName || invoice.client_name,
-      expMonth: String(expMonth).padStart(2, '0'),
-      expYear: String(expYear),
-    });
 
     const cyberStatus = paymentData?.status || '';
-    const accepted = [
-      'AUTHORIZED',
-      'AUTHORIZED_PENDING_REVIEW',
-      'PARTIAL_AUTHORIZED',
-      'PENDING',
-    ].includes(cyberStatus);
 
-    if (!accepted) {
+    const paid = ['AUTHORIZED', 'AUTHORIZED_PENDING_REVIEW'].includes(cyberStatus);
+
+    if (!paid) {
+      await db.query('ROLLBACK');
       const reason =
         paymentData?.errorInformation?.reason ||
         paymentData?.processorInformation?.responseCode ||
@@ -153,11 +185,7 @@ router.post('/invoice/:token/pay', async (req, res) => {
       return res.status(402).json({ error: `Payment declined: ${reason}` });
     }
 
-    const db = await pool.connect();
-    let dbCommitted = false;
     try {
-      await db.query('BEGIN');
-
       await db.query(
         `UPDATE invoices
          SET status = 'paid', paid_at = NOW(), updated_at = NOW()
@@ -180,17 +208,19 @@ router.post('/invoice/:token/pay', async (req, res) => {
       );
 
       await db.query('COMMIT');
-      dbCommitted = true;
     } catch (dbErr) {
       await db.query('ROLLBACK').catch(() => {});
-      console.error('DB error after successful CyberSource payment — transaction ID:', paymentData.id, dbErr);
+      console.error(
+        'DB error after successful CyberSource authorization — transaction ID:',
+        paymentData.id,
+        dbErr
+      );
       return res.status(500).json({
         error:
-          'Payment was authorised by the payment gateway but could not be recorded. ' +
-          'Please contact support with transaction ID: ' + (paymentData.id || 'unknown'),
+          'Payment was authorised but could not be recorded. ' +
+          'Please contact support with transaction ID: ' +
+          (paymentData.id || 'unknown'),
       });
-    } finally {
-      db.release();
     }
 
     res.json({
@@ -199,15 +229,11 @@ router.post('/invoice/:token/pay', async (req, res) => {
       status: cyberStatus,
     });
   } catch (err) {
-    console.error('POST /public/invoice/:token/pay', err);
-    let message = 'Payment processing failed';
-    try {
-      const parsed = JSON.parse(err?.response?.text || '{}');
-      if (parsed.message) message = parsed.message;
-      else if (parsed.errorInformation?.message)
-        message = parsed.errorInformation.message;
-    } catch {}
-    res.status(502).json({ error: message });
+    await db.query('ROLLBACK').catch(() => {});
+    console.error('POST /public/invoice/:token/pay unexpected error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    db.release();
   }
 });
 
