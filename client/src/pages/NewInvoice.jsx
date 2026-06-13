@@ -22,9 +22,11 @@ const s = {
   totalLine: { display: 'flex', justifyContent: 'space-between', gap: 40, fontSize: 13, color: '#64748b', marginBottom: 6 },
   totalAmount: { display: 'flex', justifyContent: 'space-between', gap: 40, fontSize: 17, fontWeight: 700, color: '#0f172a', marginTop: 8, paddingTop: 8, borderTop: '1.5px solid #e2e8f0' },
   actions: { display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 },
-  btnSecondary: { padding: '10px 22px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#374151' },
-  btnPrimary: { padding: '10px 22px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  btnCancel: { padding: '10px 22px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#374151' },
+  btnDraft: { padding: '10px 22px', background: '#fff', border: '1.5px solid #2563eb', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#2563eb' },
+  btnSend: { padding: '10px 22px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
   error: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 },
+  helpText: { fontSize: 12, color: '#64748b', marginTop: 4 },
 };
 
 const emptyItem = () => ({ description: '', quantity: '1', unitPrice: '' });
@@ -48,15 +50,12 @@ export default function NewInvoice() {
   function removeItem(idx) { setItems(prev => prev.filter((_, i) => i !== idx)); }
 
   const subtotal = items.reduce((s, it) => {
-    const q = parseFloat(it.quantity) || 0;
-    const p = parseFloat(it.unitPrice) || 0;
-    return s + q * p;
+    return s + (parseFloat(it.quantity) || 0) * (parseFloat(it.unitPrice) || 0);
   }, 0);
   const taxAmount = subtotal * (parseFloat(taxRate) || 0) / 100;
   const total = subtotal + taxAmount;
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(sendNow) {
     setError('');
     const validItems = items.filter(it => it.description.trim() && it.unitPrice);
     if (!validItems.length) { setError('Add at least one line item with a description and price.'); return; }
@@ -64,10 +63,15 @@ export default function NewInvoice() {
     try {
       const data = await api.invoices.create({
         clientName, clientEmail,
-        items: validItems.map(it => ({ description: it.description, quantity: parseFloat(it.quantity) || 1, unitPrice: parseFloat(it.unitPrice) })),
+        items: validItems.map(it => ({
+          description: it.description,
+          quantity: parseFloat(it.quantity) || 1,
+          unitPrice: parseFloat(it.unitPrice),
+        })),
         dueDate: dueDate || undefined,
         notes: notes || undefined,
         taxRate: parseFloat(taxRate) || 0,
+        sendNow,
       });
       navigate(`/admin/invoices/${data.invoice.id}`);
     } catch (err) {
@@ -79,88 +83,91 @@ export default function NewInvoice() {
 
   return (
     <Layout title="New Invoice">
-      <form onSubmit={handleSubmit}>
-        {error && <div style={s.error}>{error}</div>}
+      {error && <div style={s.error}>{error}</div>}
 
-        <div style={s.card}>
-          <p style={s.sectionTitle}>Client Information</p>
-          <div style={s.row}>
-            <div style={s.field}>
-              <label style={s.label}>Client Name *</label>
-              <input style={s.input} value={clientName} onChange={e => setClientName(e.target.value)} required placeholder="John Smith" />
-            </div>
-            <div style={s.field}>
-              <label style={s.label}>Client Email *</label>
-              <input style={s.input} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} required placeholder="client@example.com" />
-            </div>
+      <div style={s.card}>
+        <p style={s.sectionTitle}>Client Information</p>
+        <div style={s.row}>
+          <div style={s.field}>
+            <label style={s.label}>Client Name *</label>
+            <input style={s.input} value={clientName} onChange={e => setClientName(e.target.value)} required placeholder="John Smith" />
           </div>
-          <div style={s.row}>
-            <div style={{ ...s.field, maxWidth: 220 }}>
-              <label style={s.label}>Due Date</label>
-              <input style={s.input} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-            </div>
+          <div style={s.field}>
+            <label style={s.label}>Client Email *</label>
+            <input style={s.input} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} required placeholder="client@example.com" />
           </div>
         </div>
-
-        <div style={s.card}>
-          <p style={s.sectionTitle}>Line Items</p>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                <th style={{ ...s.th, width: '45%' }}>Description</th>
-                <th style={{ ...s.th, width: '12%' }}>Qty</th>
-                <th style={{ ...s.th, width: '18%' }}>Unit Price</th>
-                <th style={{ ...s.th, width: '18%' }}>Amount</th>
-                <th style={{ ...s.th, width: '7%' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const amt = (parseFloat(it.quantity) || 0) * (parseFloat(it.unitPrice) || 0);
-                return (
-                  <tr key={idx}>
-                    <td style={s.td}><input style={s.lineInput} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Service description" /></td>
-                    <td style={s.td}><input style={s.lineInput} type="number" min="0.01" step="0.01" value={it.quantity} onChange={e => updateItem(idx, 'quantity', e.target.value)} /></td>
-                    <td style={s.td}><input style={s.lineInput} type="number" min="0" step="0.01" value={it.unitPrice} onChange={e => updateItem(idx, 'unitPrice', e.target.value)} placeholder="0.00" /></td>
-                    <td style={{ ...s.td, fontSize: 13, color: '#374151', fontWeight: 500 }}>${amt.toFixed(2)}</td>
-                    <td style={s.td}>
-                      {items.length > 1 && <button type="button" style={s.removeBtn} onClick={() => removeItem(idx)}>×</button>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <button type="button" style={s.addRowBtn} onClick={addItem}>+ Add line item</button>
-
-          <div style={s.totalRow}>
-            <div style={s.totalBox}>
-              <div style={s.totalLine}><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
-              <div style={{ ...s.totalLine, alignItems: 'center' }}>
-                <span>Tax (%)</span>
-                <input style={{ ...s.lineInput, width: 80, textAlign: 'right' }} type="number" min="0" max="100" step="0.1" value={taxRate} onChange={e => setTaxRate(e.target.value)} />
-              </div>
-              {parseFloat(taxRate) > 0 && (
-                <div style={s.totalLine}><span>Tax Amount</span><span>${taxAmount.toFixed(2)}</span></div>
-              )}
-              <div style={s.totalAmount}><span>Total (USD)</span><span>${total.toFixed(2)}</span></div>
-            </div>
+        <div style={s.row}>
+          <div style={{ ...s.field, maxWidth: 220 }}>
+            <label style={s.label}>Due Date</label>
+            <input style={s.input} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </div>
         </div>
+      </div>
 
-        <div style={s.card}>
-          <p style={s.sectionTitle}>Additional Notes</p>
-          <textarea style={s.textarea} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Payment instructions, terms, or other notes for the client…" />
-        </div>
+      <div style={s.card}>
+        <p style={s.sectionTitle}>Line Items</p>
+        <table style={s.table}>
+          <thead>
+            <tr>
+              <th style={{ ...s.th, width: '45%' }}>Description</th>
+              <th style={{ ...s.th, width: '12%' }}>Qty</th>
+              <th style={{ ...s.th, width: '18%' }}>Unit Price</th>
+              <th style={{ ...s.th, width: '18%' }}>Amount</th>
+              <th style={{ ...s.th, width: '7%' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, idx) => {
+              const amt = (parseFloat(it.quantity) || 0) * (parseFloat(it.unitPrice) || 0);
+              return (
+                <tr key={idx}>
+                  <td style={s.td}><input style={s.lineInput} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Service or product description" /></td>
+                  <td style={s.td}><input style={s.lineInput} type="number" min="0.01" step="0.01" value={it.quantity} onChange={e => updateItem(idx, 'quantity', e.target.value)} /></td>
+                  <td style={s.td}><input style={s.lineInput} type="number" min="0" step="0.01" value={it.unitPrice} onChange={e => updateItem(idx, 'unitPrice', e.target.value)} placeholder="0.00" /></td>
+                  <td style={{ ...s.td, fontSize: 13, color: '#374151', fontWeight: 500 }}>${amt.toFixed(2)}</td>
+                  <td style={s.td}>
+                    {items.length > 1 && <button type="button" style={s.removeBtn} onClick={() => removeItem(idx)}>×</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
 
-        <div style={s.actions}>
-          <button type="button" style={s.btnSecondary} onClick={() => navigate('/admin/dashboard')}>Cancel</button>
-          <button type="submit" style={s.btnPrimary} disabled={loading}>
-            {loading ? 'Saving…' : 'Save Invoice'}
-          </button>
+        <button type="button" style={s.addRowBtn} onClick={addItem}>+ Add line item</button>
+
+        <div style={s.totalRow}>
+          <div style={s.totalBox}>
+            <div style={s.totalLine}><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
+            <div style={{ ...s.totalLine, alignItems: 'center' }}>
+              <span>Tax (%)</span>
+              <input style={{ ...s.lineInput, width: 80, textAlign: 'right' }} type="number" min="0" max="100" step="0.1" value={taxRate} onChange={e => setTaxRate(e.target.value)} />
+            </div>
+            {parseFloat(taxRate) > 0 && (
+              <div style={s.totalLine}><span>Tax Amount</span><span>${taxAmount.toFixed(2)}</span></div>
+            )}
+            <div style={s.totalAmount}><span>Total (USD)</span><span>${total.toFixed(2)}</span></div>
+          </div>
         </div>
-      </form>
+      </div>
+
+      <div style={s.card}>
+        <p style={s.sectionTitle}>Additional Notes</p>
+        <textarea style={s.textarea} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Payment instructions, terms, or other notes for the client…" />
+      </div>
+
+      <div style={s.actions}>
+        <button type="button" style={s.btnCancel} onClick={() => navigate('/admin/dashboard')} disabled={loading}>
+          Cancel
+        </button>
+        <button type="button" style={s.btnDraft} onClick={() => handleSubmit(false)} disabled={loading}>
+          {loading ? 'Saving…' : 'Save as Draft'}
+        </button>
+        <button type="button" style={s.btnSend} onClick={() => handleSubmit(true)} disabled={loading}>
+          {loading ? 'Saving…' : 'Send Invoice'}
+        </button>
+      </div>
     </Layout>
   );
 }

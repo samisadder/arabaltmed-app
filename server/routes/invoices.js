@@ -6,6 +6,14 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+const VALID_TRANSITIONS = {
+  draft:   ['sent', 'void'],
+  sent:    ['paid', 'void'],
+  overdue: ['paid', 'void'],
+  paid:    [],
+  void:    [],
+};
+
 async function markOverdue(client) {
   await client.query(`
     UPDATE invoices
@@ -38,10 +46,11 @@ async function upsertClient(client, name, email) {
 async function nextInvoiceNumber(client) {
   const year = new Date().getFullYear();
   const res = await client.query(
-    `SELECT COUNT(*) FROM invoices WHERE invoice_number LIKE $1`,
+    `SELECT COALESCE(MAX(CAST(SPLIT_PART(invoice_number, '-', 3) AS INTEGER)), 0) AS max_seq
+     FROM invoices WHERE invoice_number LIKE $1`,
     [`INV-${year}-%`]
   );
-  const seq = String(Number(res.rows[0].count) + 1).padStart(4, '0');
+  const seq = String(Number(res.rows[0].max_seq) + 1).padStart(4, '0');
   return `INV-${year}-${seq}`;
 }
 
@@ -90,7 +99,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { clientName, clientEmail, items = [], dueDate, notes, taxRate = 0 } = req.body;
+  const { clientName, clientEmail, items = [], dueDate, notes, taxRate = 0, sendNow = false } = req.body;
 
   if (!clientName || !clientEmail) {
     return res.status(400).json({ error: 'Client name and email are required' });
@@ -111,14 +120,17 @@ router.post('/', async (req, res) => {
     const taxAmount = Math.round(subtotal * (Number(taxRate) / 100) * 100) / 100;
     const total = Math.round((subtotal + taxAmount) * 100) / 100;
 
+    const initialStatus = sendNow ? 'sent' : 'draft';
+    const sentAtValue = sendNow ? new Date() : null;
+
     const invRes = await dbClient.query(`
       INSERT INTO invoices (invoice_number, public_token, client_id, status, due_date, notes,
-                            subtotal, tax_rate, tax_amount, total, currency)
-      VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,'USD')
+                            subtotal, tax_rate, tax_amount, total, currency, sent_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11)
       RETURNING *
-    `, [invoiceNumber, publicToken, clientId,
+    `, [invoiceNumber, publicToken, clientId, initialStatus,
         dueDate || null, notes || null,
-        subtotal, taxRate, taxAmount, total]);
+        subtotal, taxRate, taxAmount, total, sentAtValue]);
 
     const invoice = invRes.rows[0];
 
@@ -150,14 +162,28 @@ router.patch('/:id', async (req, res) => {
     if (!inv.rows[0]) return res.status(404).json({ error: 'Invoice not found' });
 
     const current = inv.rows[0];
+
+    if (status && status !== current.status) {
+      const allowed = VALID_TRANSITIONS[current.status] || [];
+      if (!allowed.includes(status)) {
+        return res.status(400).json({
+          error: `Cannot transition from '${current.status}' to '${status}'`,
+        });
+      }
+    }
+
     const newStatus = status || current.status;
     const newNotes = notes !== undefined ? notes : current.notes;
     const newDueDate = dueDate !== undefined ? dueDate : current.due_date;
 
+    const sentAt = (status === 'sent' && !current.sent_at) ? new Date() : current.sent_at;
+    const paidAt = (status === 'paid' && !current.paid_at) ? new Date() : current.paid_at;
+
     const result = await dbClient.query(`
-      UPDATE invoices SET status=$1, notes=$2, due_date=$3, updated_at=NOW()
+      UPDATE invoices
+      SET status=$1, notes=$2, due_date=$3, sent_at=$5, paid_at=$6, updated_at=NOW()
       WHERE id=$4 RETURNING *
-    `, [newStatus, newNotes, newDueDate, req.params.id]);
+    `, [newStatus, newNotes, newDueDate, req.params.id, sentAt, paidAt]);
 
     res.json({ invoice: result.rows[0] });
   } finally {
@@ -170,6 +196,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const inv = await dbClient.query('SELECT status FROM invoices WHERE id = $1', [req.params.id]);
     if (!inv.rows[0]) return res.status(404).json({ error: 'Invoice not found' });
+
+    if (inv.rows[0].status !== 'draft') {
+      return res.status(400).json({ error: 'Only draft invoices can be deleted. Use void to cancel a sent invoice.' });
+    }
 
     await dbClient.query('DELETE FROM invoices WHERE id = $1', [req.params.id]);
     res.json({ ok: true });

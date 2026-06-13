@@ -36,8 +36,10 @@ const s = {
   error: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 },
 };
 
-function fmt(n) { return `$${parseFloat(n).toFixed(2)}`; }
-function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—'; }
+function fmtAmt(n) { return `$${parseFloat(n).toFixed(2)}`; }
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—';
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -55,7 +57,8 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  function copyUrl(inv) {
+  function copyUrl(inv, e) {
+    e.stopPropagation();
     const url = `${publicDomain}/invoice/${inv.public_token}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopying(inv.id);
@@ -63,17 +66,17 @@ export default function Dashboard() {
     });
   }
 
-  async function handleDelete(id) {
-    if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
+  async function handleDelete(inv, e) {
+    e.stopPropagation();
+    if (!window.confirm('Permanently delete this draft invoice? This cannot be undone.')) return;
     try {
-      await api.invoices.delete(id);
-      setInvoices(prev => prev.filter(inv => inv.id !== id));
+      await api.invoices.delete(inv.id);
+      setInvoices(prev => prev.filter(i => i.id !== inv.id));
     } catch (err) {
       setError(err.message);
     }
   }
 
-  const total = invoices.reduce((s, i) => s + parseFloat(i.total), 0);
   const pending = invoices.filter(i => ['draft','sent'].includes(i.status)).reduce((s, i) => s + parseFloat(i.total), 0);
   const paidAmt = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
   const overdueCount = invoices.filter(i => i.status === 'overdue').length;
@@ -124,31 +127,26 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {invoices.map(inv => (
-                <tr key={inv.id} style={{ cursor: 'pointer' }}>
-                  <td style={{ ...s.td, fontWeight: 600, color: '#0f172a' }}
-                      onClick={() => navigate(`/admin/invoices/${inv.id}`)}>
-                    {inv.invoice_number}
-                  </td>
-                  <td style={s.td} onClick={() => navigate(`/admin/invoices/${inv.id}`)}>
+                <tr key={inv.id} onClick={() => navigate(`/admin/invoices/${inv.id}`)}
+                    style={{ cursor: 'pointer' }}>
+                  <td style={{ ...s.td, fontWeight: 600, color: '#0f172a' }}>{inv.invoice_number}</td>
+                  <td style={s.td}>
                     <div style={{ fontWeight: 500 }}>{inv.client_name}</div>
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>{inv.client_email}</div>
                   </td>
-                  <td style={{ ...s.td, fontWeight: 600 }} onClick={() => navigate(`/admin/invoices/${inv.id}`)}>
-                    {fmt(inv.total)}
-                  </td>
-                  <td style={s.td} onClick={() => navigate(`/admin/invoices/${inv.id}`)}>
-                    <span style={s.badge(inv.status)}>{inv.status}</span>
-                  </td>
-                  <td style={s.td} onClick={() => navigate(`/admin/invoices/${inv.id}`)}>
-                    {fmtDate(inv.due_date)}
-                  </td>
-                  <td style={s.td}>
-                    <button style={s.actionBtn} onClick={() => copyUrl(inv)}>
-                      {copying === inv.id ? '✓ Copied' : '🔗 Copy URL'}
-                    </button>
-                    {['draft','sent'].includes(inv.status) && (
-                      <button style={{ ...s.actionBtn, color: '#ef4444', borderColor: '#fecaca' }}
-                              onClick={() => handleDelete(inv.id)}>
+                  <td style={{ ...s.td, fontWeight: 600 }}>{fmtAmt(inv.total)}</td>
+                  <td style={s.td}><span style={s.badge(inv.status)}>{inv.status}</span></td>
+                  <td style={s.td}>{fmtDate(inv.due_date)}</td>
+                  <td style={s.td} onClick={e => e.stopPropagation()}>
+                    {inv.status !== 'void' && (
+                      <button style={s.actionBtn} onClick={e => copyUrl(inv, e)}>
+                        {copying === inv.id ? '✓ Copied' : '🔗 Copy URL'}
+                      </button>
+                    )}
+                    {inv.status === 'draft' && (
+                      <button
+                        style={{ ...s.actionBtn, color: '#ef4444', borderColor: '#fecaca' }}
+                        onClick={e => handleDelete(inv, e)}>
                         Delete
                       </button>
                     )}

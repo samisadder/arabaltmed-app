@@ -20,12 +20,13 @@ const s = {
     fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
     ...STATUS_COLORS[status] || STATUS_COLORS.draft,
   }),
-  actions: { display: 'flex', gap: 10 },
+  actions: { display: 'flex', gap: 10, flexWrap: 'wrap' },
   btn: (variant = 'secondary') => ({
-    padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none',
-    ...(variant === 'primary' ? { background: '#2563eb', color: '#fff' }
-      : variant === 'danger'  ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }
-      :                          { background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0' }),
+    padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    ...(variant === 'primary'   ? { background: '#2563eb', color: '#fff', border: 'none' }
+      : variant === 'danger'    ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }
+      : variant === 'warn'      ? { background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }
+      :                            { background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0' }),
   }),
   card: { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '24px 28px', marginBottom: 18 },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 32px' },
@@ -43,7 +44,8 @@ const s = {
   urlText: { flex: 1, fontSize: 13, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' },
   copyBtn: { flexShrink: 0, padding: '6px 14px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   notesText: { fontSize: 13, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap' },
-  emptyNote: { fontSize: 13, color: '#94a3b8', fontStyle: 'italic' },
+  historyRow: { display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: '#64748b', marginBottom: 8 },
+  historyDot: (color) => ({ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }),
   error: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 },
   loading: { textAlign: 'center', padding: 60, color: '#64748b' },
 };
@@ -57,6 +59,10 @@ function Field({ label, value }) {
   );
 }
 
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : null;
+}
+
 export default function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -65,7 +71,7 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payments.arabaltmed.com';
 
@@ -77,14 +83,27 @@ export default function InvoiceDetail() {
   }, [id]);
 
   async function handleDelete() {
-    if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
-    setDeleting(true);
+    if (!window.confirm('Permanently delete this draft invoice? This cannot be undone.')) return;
+    setActionLoading(true);
     try {
       await api.invoices.delete(id);
       navigate('/admin/dashboard');
     } catch (err) {
       setError(err.message);
-      setDeleting(false);
+      setActionLoading(false);
+    }
+  }
+
+  async function handleVoid() {
+    if (!window.confirm('Void this invoice? It will be cancelled and cannot be undone.')) return;
+    setActionLoading(true);
+    try {
+      const data = await api.invoices.update(id, { status: 'void' });
+      setInvoice(data.invoice);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -100,7 +119,16 @@ export default function InvoiceDetail() {
   if (error && !invoice) return <Layout title="Error"><div style={s.error}>{error}</div></Layout>;
 
   const publicUrl = `${publicDomain}/invoice/${invoice.public_token}`;
-  const canDelete = ['draft', 'sent'].includes(invoice.status);
+  const isDraft = invoice.status === 'draft';
+  const isVoidable = ['draft', 'sent', 'overdue'].includes(invoice.status);
+
+  const statusHistory = [
+    { label: 'Created', date: invoice.created_at, color: '#94a3b8' },
+    invoice.sent_at && { label: 'Sent to client', date: invoice.sent_at, color: '#2563eb' },
+    invoice.paid_at && { label: 'Payment received', date: invoice.paid_at, color: '#16a34a' },
+    invoice.status === 'void' && { label: 'Voided', date: invoice.updated_at, color: '#9ca3af' },
+    invoice.status === 'overdue' && { label: 'Marked overdue', date: invoice.updated_at, color: '#dc2626' },
+  ].filter(Boolean);
 
   return (
     <Layout title={invoice.invoice_number}>
@@ -113,9 +141,14 @@ export default function InvoiceDetail() {
         </div>
         <div style={s.actions}>
           <button style={s.btn()} onClick={() => navigate('/admin/dashboard')}>← Back</button>
-          {canDelete && (
-            <button style={s.btn('danger')} onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Deleting…' : 'Delete'}
+          {isVoidable && (
+            <button style={s.btn('warn')} onClick={handleVoid} disabled={actionLoading}>
+              Void Invoice
+            </button>
+          )}
+          {isDraft && (
+            <button style={s.btn('danger')} onClick={handleDelete} disabled={actionLoading}>
+              {actionLoading ? 'Deleting…' : 'Delete Draft'}
             </button>
           )}
         </div>
@@ -126,10 +159,8 @@ export default function InvoiceDetail() {
         <div style={s.grid2}>
           <Field label="Client Name" value={invoice.client_name} />
           <Field label="Client Email" value={invoice.client_email} />
-          <Field label="Due Date" value={invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric', timeZone:'UTC' }) : null} />
-          <Field label="Created" value={new Date(invoice.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })} />
-          {invoice.sent_at && <Field label="Sent" value={new Date(invoice.sent_at).toLocaleDateString()} />}
-          {invoice.paid_at && <Field label="Paid" value={new Date(invoice.paid_at).toLocaleDateString()} />}
+          <Field label="Due Date" value={fmtDate(invoice.due_date)} />
+          <Field label="Currency" value={invoice.currency} />
         </div>
       </div>
 
@@ -168,20 +199,35 @@ export default function InvoiceDetail() {
       </div>
 
       <div style={s.card}>
-        <p style={s.sectionTitle}>Public Payment URL</p>
-        <div style={s.urlBox}>
-          <span style={s.urlText}>{publicUrl}</span>
-          <button style={s.copyBtn} onClick={copyUrl}>{copied ? '✓ Copied' : 'Copy URL'}</button>
-        </div>
-        <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-          Share this link with your client. They can view the invoice and pay online.
-        </p>
+        <p style={s.sectionTitle}>Status History</p>
+        {statusHistory.map((ev, i) => (
+          <div key={i} style={s.historyRow}>
+            <div style={s.historyDot(ev.color)} />
+            <span style={{ fontWeight: 500, color: '#374151' }}>{ev.label}</span>
+            <span style={{ color: '#94a3b8', marginLeft: 'auto', fontSize: 12 }}>
+              {new Date(ev.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        ))}
       </div>
+
+      {invoice.status !== 'void' && (
+        <div style={s.card}>
+          <p style={s.sectionTitle}>Public Payment URL</p>
+          <div style={s.urlBox}>
+            <span style={s.urlText}>{publicUrl}</span>
+            <button style={s.copyBtn} onClick={copyUrl}>{copied ? '✓ Copied' : 'Copy URL'}</button>
+          </div>
+          <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+            Share this link with your client. They can view the invoice and pay online.
+          </p>
+        </div>
+      )}
 
       {invoice.notes && (
         <div style={s.card}>
           <p style={s.sectionTitle}>Notes</p>
-          <p style={s.notesText}>{invoice.notes}</p>
+          <p style={{ ...s.notesText, margin: 0 }}>{invoice.notes}</p>
         </div>
       )}
     </Layout>
