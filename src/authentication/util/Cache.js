@@ -1,0 +1,330 @@
+'use strict';
+
+var fs = require('fs');
+var forge = require('node-forge');
+var cache = require('memory-cache');
+var path = require('path');
+var Constants = require('./Constants');
+var ApiException = require('./ApiException');
+var Logger = require('../logging/Logger');
+var Utility = require('./Utility');
+
+/**
+ * This module is doing Caching.
+ * Certificate will be available in the memory cache if it has initialized once.
+ */
+exports.fetchCachedCertificate = function (merchantConfig, logger) {
+
+    var cachedCertificateFromP12File = cache.get("certificateFromP12File");
+    var cachedLastModifiedTimeStamp = cache.get("certificateLastModifideTimeStamp");
+
+    var filePath = merchantConfig.getP12FilePath();
+    if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        const currentFileLastModifiedTime = stats.mtime;
+        //If no entry found from cache, create a cache entry and return the created object
+        if ((cachedCertificateFromP12File === null || cachedCertificateFromP12File === undefined) ||
+            (cachedLastModifiedTimeStamp === null || cachedLastModifiedTimeStamp === undefined) ||
+            (currentFileLastModifiedTime > cachedLastModifiedTimeStamp)) {
+            //Function call to read the file and put values to new cache  
+            var keyPass = merchantConfig.getKeyPass();
+            var certificateFromP12File = getCertificate(keyPass, filePath, currentFileLastModifiedTime, logger);
+            return certificateFromP12File;
+
+        }
+
+        else {
+            return cachedCertificateFromP12File;
+        }
+    }
+
+    else {
+        ApiException.AuthException(Constants.FILE_NOT_FOUND + filePath);
+    }
+
+}
+
+//Function to read the file and put values to new cache 
+function getCertificate(keyPass, filePath, fileLastModifiedTime, logger) {
+    try {
+        var certificate = Utility.parseP12File(filePath, keyPass, logger);
+        cache.put("certificateFromP12File", certificate);
+        cache.put("certificateLastModifideTimeStamp", fileLastModifiedTime);
+        return certificate;
+    } catch (error) {
+        ApiException.AuthException(error.message + ". " + Constants.INCORRECT_KEY_PASS);
+    }
+}
+
+/**
+ * @deprecated This method has been marked as Deprecated and will be removed in coming releases.
+ *
+ */
+exports.fetchPEMFileForNetworkTokenization = function(merchantConfig) {
+    var filePath = merchantConfig.getpemFileDirectory();
+    var pemFileData = cache.get("privateKeyFromPEMFile");
+    var cachedPemFileLastUpdatedTime = cache.get("cachedLastModifiedTimeOfPEMFile");
+    if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        const currentFileLastModifiedTime = stats.mtime;
+        if (pemFileData === undefined || pemFileData === null || cachedPemFileLastUpdatedTime < currentFileLastModifiedTime) {
+            pemFileData = fs.readFileSync(filePath, 'utf8');
+            cache.put("privateKeyFromPEMFile", pemFileData);
+            cache.put("cachedLastModifiedTimeOfPEMFile", currentFileLastModifiedTime);
+        }
+    }
+    return cache.get("privateKeyFromPEMFile");
+}
+
+
+exports.getRequestMLECertFromCache = function(merchantConfig) {
+    var logger = Logger.getLogger(merchantConfig, 'Cache');
+    var merchantId = merchantConfig.getMerchantID();
+    var cacheKey = null;
+    var certificatePath = null;
+    if (merchantConfig.getMleForRequestPublicCertPath() !== null && merchantConfig.getMleForRequestPublicCertPath() !== undefined) {
+        cacheKey =  merchantId + Constants.MLE_CACHE_IDENTIFIER_FOR_CONFIG_CERT;
+        certificatePath = merchantConfig.getMleForRequestPublicCertPath();
+    } else if (Constants.JWT === merchantConfig.getAuthenticationType().toLowerCase() && !merchantConfig.isSharedSecretKeyType()) {
+        certificatePath = merchantConfig.getP12FilePath();
+        cacheKey =  merchantId + Constants.MLE_CACHE_IDENTIFIER_FOR_P12_CERT;
+    } else {
+        logger.debug("The certificate to use for MLE for requests is not provided in the merchant configuration. Please ensure that the certificate path is provided.");
+        return null;
+    }
+    return getMLECertBasedOnCacheKey(merchantConfig, cacheKey, certificatePath);
+
+}
+
+function getMLECertBasedOnCacheKey(merchantConfig, cacheKey, certificatePath) {
+    var cachedMLECert = cache.get(cacheKey);
+    var logger = Logger.getLogger(merchantConfig, 'Cache');
+    if (cachedMLECert === null || cachedMLECert === undefined || cachedMLECert.fileLastModifiedTime !== fs.statSync(certificatePath).mtimeMs) {
+        logger.debug("MLE certificate not found in cache or has been modified. Loading from file: " + certificatePath);
+        setupMLECache(merchantConfig, cacheKey, certificatePath);
+    } else {
+        logger.debug("MLE certificate found in cache for key: " + cacheKey);
+    }
+    return cache.get(cacheKey).mleCert;
+}
+
+function setupMLECache(merchantConfig, cacheKey, certificateSourcePath) {
+    var fileLastModifiedTime = fs.statSync(certificateSourcePath).mtimeMs;
+    var mleCert = null;
+    if  (cacheKey.endsWith(Constants.MLE_CACHE_IDENTIFIER_FOR_CONFIG_CERT)) {
+        mleCert = loadCertificateFromPem(merchantConfig, certificateSourcePath);
+    }
+    else if (cacheKey.endsWith(Constants.MLE_CACHE_IDENTIFIER_FOR_P12_CERT)) {
+        mleCert = loadCertificateFromP12(merchantConfig, certificateSourcePath);
+    }
+    cache.put(cacheKey, {
+        mleCert: mleCert,
+        fileLastModifiedTime: fileLastModifiedTime
+    });
+    validateCertificateExpiry(mleCert, merchantConfig.getRequestmleKeyAlias(), cacheKey, merchantConfig);
+}
+
+
+function loadCertificateFromP12(merchantConfig, certificatePath) {
+    const logger = Logger.getLogger(merchantConfig, 'Cache');
+    try {
+        // Read and parse the P12 file
+        var p12Cert = Utility.parseP12File(certificatePath, merchantConfig.getKeyPass(), logger);
+        
+        // Extract the certificate from the P12 container
+        var certBags = p12Cert.getBags({ bagType: forge.pki.oids.certBag });
+        if (certBags && certBags[forge.pki.oids.certBag] && certBags[forge.pki.oids.certBag].length > 0) {
+            // Process all certificates in the P12 file
+            var certs = [];
+            for (var i = 0; i < certBags[forge.pki.oids.certBag].length; i++) {
+                var cert = certBags[forge.pki.oids.certBag][i].cert;
+                var certPem = forge.pki.certificateToPem(cert);
+                certs.push(certPem);
+            }
+            
+            // Try to find the certificate by alias among all certificates
+            var mleCert =  Utility.findCertificateByAlias(certs, merchantConfig.getRequestmleKeyAlias());
+            return forge.pki.certificateFromPem(mleCert);
+        } else {
+            throw new Error("No certificate found in P12 file");
+        }
+    } catch (error) {
+        ApiException.ApiException(error.message + ". " + Constants.INCORRECT_KEY_PASS, logger);
+    }
+}
+
+function loadCertificateFromPem(merchantConfig, mleCertPath) {
+    try {
+        const logger = Logger.getLogger(merchantConfig, 'Cache');
+        var pemData = fs.readFileSync(mleCertPath, 'utf8');
+        var certs = Utility.loadPemCertificates(pemData);
+        var mleCert = null;
+        if (!certs || certs.length === 0) {
+            throw new Error("No valid PEM certificates found in the provided path : " + mleCertPath);
+        }
+        try {
+            mleCert = Utility.findCertificateByAlias(certs, merchantConfig.getRequestmleKeyAlias());
+            
+        } catch (error) {
+            logger.warn("No certificate found for the specified requestmleKeyAlias '" + merchantConfig.getRequestmleKeyAlias() + "'. Using the first certificate from file " + mleCertPath + " as the MLE request certificate.");
+            mleCert = certs[0];
+        }
+        // Use node forge to parse the PEM certificate
+        var forgeCert = forge.pki.certificateFromPem(mleCert);
+        return forgeCert;
+    } catch (error) {
+        ApiException.AuthException("Error occurred while loading MLE certificate from PEM file : " + error.message);
+    }
+}
+
+function validateCertificateExpiry(certificate, keyAlias, cacheKey, merchantConfig) {
+    var logger = Logger.getLogger(merchantConfig, 'Cache');
+    
+    var warningMessageForNoExpiryDate = "Certificate does not have expiry date";
+    var warningMessageForCertificateExpiringSoon = "Certificate with alias {} is going to expire on {}. Please update the certificate before then.";
+    var warningMessageForExpiredCertificate = "Certificate with alias {} is expired as of {}. Please update the certificate.";
+
+    if (cacheKey.endsWith(Constants.MLE_CACHE_IDENTIFIER_FOR_CONFIG_CERT)) {
+        warningMessageForNoExpiryDate = "Certificate for MLE Requests does not have expiry date from mleForRequestPublicCertPath in merchant configuration.";
+        warningMessageForCertificateExpiringSoon = "Certificate for MLE Requests with alias {} is going to expire on {}. Please update the certificate provided in mleForRequestPublicCertPath in merchant configuration before then.";
+        warningMessageForExpiredCertificate = "Certificate for MLE Requests with alias {} is expired as of {}. Please update the certificate provided in mleForRequestPublicCertPath in merchant configuration.";
+    }
+
+    if (cacheKey.endsWith(Constants.MLE_CACHE_IDENTIFIER_FOR_P12_CERT)) {
+        warningMessageForNoExpiryDate = "Certificate for MLE Requests does not have expiry date in the P12 file.";
+        warningMessageForCertificateExpiringSoon = "Certificate for MLE Requests with alias {} is going to expire on {}. Please update the P12 file before then.";
+        warningMessageForExpiredCertificate = "Certificate for MLE Requests with alias {} is expired as of {}. Please update the P12 file.";
+    }
+
+    // Get the certificate's notAfter date (expiry date)
+    var notAfter = null;
+    try {
+        // All certificates are now in PEM format
+        if (certificate.validity && certificate.validity.notAfter) {
+            notAfter = certificate.validity.notAfter;
+        } else {
+            logger.warn("Unknown certificate format. Cannot extract expiry date.");
+        }
+    } catch (error) {
+        logger.warn("Error extracting certificate expiry date: " + error.message);
+        return;
+    }
+
+    if (!notAfter) {
+        // Certificate does not have an expiry date
+        logger.warn(warningMessageForNoExpiryDate);
+    } else {
+        var now = new Date();
+        
+        if (notAfter < now) {
+            // Certificate is already expired
+            var expiredMessage = warningMessageForExpiredCertificate.replace("{}", keyAlias).replace("{}", notAfter.toISOString().split('T')[0]);
+            logger.warn(expiredMessage);
+        } else {
+            // Calculate days until expiry
+            var timeToExpire = notAfter.getTime() - now.getTime();
+            var daysToExpire = Math.floor(timeToExpire / Constants.FACTOR_DAYS_TO_MILLISECONDS);
+            
+            if (daysToExpire < Constants.CERTIFICATE_EXPIRY_DATE_WARNING_DAYS) {
+                var expiringMessage = warningMessageForCertificateExpiringSoon.replace("{}", keyAlias).replace("{}", notAfter.toISOString().split('T')[0]);
+                logger.warn(expiringMessage);
+            }
+        }
+    }
+};
+
+exports.addPublicKeyToCache = function(runEnvironment, keyId, publicKey) {
+    const cacheKey = Constants.PUBLIC_KEY_CACHE_IDENTIFIER + "_" + runEnvironment + "_" + keyId;
+    cache.put(cacheKey, publicKey);
+};
+
+exports.getPublicKeyFromCache = function(runEnvironment, keyId) {
+    const cacheKey = Constants.PUBLIC_KEY_CACHE_IDENTIFIER + "_" + runEnvironment + "_" + keyId;
+    
+    if (cache.size() === 0 || !cache.get(cacheKey)) {
+        throw new Error("Public key not found in cache for [" + runEnvironment + ", " + keyId + "]");
+    }
+    
+    return cache.get(cacheKey);
+};
+
+exports.getMleResponsePrivateKeyFromFilePath = function(merchantConfig) {
+    const logger = Logger.getLogger(merchantConfig, 'Cache');
+    const merchantId = merchantConfig.getMerchantID();
+    const cacheKey = merchantId + Constants.MLE_CACHE_KEY_IDENTIFIER_FOR_RESPONSE_PRIVATE_KEY;
+    const certificatePath = merchantConfig.getResponseMlePrivateKeyFilePath();
+
+    const cachedEntry = cache.get(cacheKey);
+
+    logger.debug("Fetching MLE response private key from cache with key: " + cacheKey);
+    if (cachedEntry == undefined || cachedEntry == null || cachedEntry.fileLastModifiedTime !== fs.statSync(certificatePath).mtimeMs) {
+        logger.debug("MLE response private key not found in cache or has been modified. Loading from file: " + certificatePath);
+        putMLEResponsePrivateKeyInCache(merchantConfig, cacheKey, certificatePath);
+    }
+    return cache.get(cacheKey).privateKey;
+}
+
+function putMLEResponsePrivateKeyInCache(merchantConfig, cacheKey, privateKeyPath) {
+    const logger = Logger.getLogger(merchantConfig, 'Cache');
+    const fileExtension = path.extname(privateKeyPath).toLowerCase();
+    const keyPass = merchantConfig.getResponseMlePrivateKeyFilePassword();
+    const fileLastModifiedTime = fs.statSync(privateKeyPath).mtimeMs;
+    var privateKey = null;
+    try {
+        if (['.p12', '.pfx'].includes(fileExtension)) {
+            privateKey = Utility.readPrivateKeyFromP12(privateKeyPath, keyPass, logger);
+        } else if (['.pem', '.key', '.p8'].includes(fileExtension)) {
+            privateKey = Utility.readPrivateKeyFromPemFile(privateKeyPath, keyPass, logger);
+        }
+    } catch (error) {
+        logger.error("Error reading private key from file: " + error.message);
+        throw error;
+    }
+    const cacheEntry = {
+        privateKey: privateKey,
+        fileLastModifiedTime: fileLastModifiedTime
+    };
+    cache.put(cacheKey, cacheEntry);
+}
+
+exports.fetchCachedP12FromFile = function(filePath, password, logger, cacheKey) {
+    // Use provided cache key or default to filePath + identifier
+    const finalCacheKey = cacheKey || (filePath + Constants.RESPONSE_MLE_P12_PFX_CACHE_IDENTIFIER);
+    const cachedEntry = cache.get(finalCacheKey);
+    
+    logger.debug(`Fetching P12/PFX from cache with key: ${finalCacheKey}`);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+        logger.error(`File not found: ${filePath}`);
+        throw new Error(Constants.FILE_NOT_FOUND + filePath);
+    }
+    
+    const currentFileLastModifiedTime = fs.statSync(filePath).mtimeMs;
+    
+    // Check if cache is valid (exists and file hasn't been modified)
+    if (cachedEntry && cachedEntry.fileLastModifiedTime === currentFileLastModifiedTime) {
+        logger.debug(`P12/PFX found in cache and file not modified`);
+        return cachedEntry.p12Object;
+    }
+    
+    // Cache miss or file modified - parse and cache
+    logger.debug(`P12/PFX not in cache or file modified. Loading from file: ${filePath}`);
+    
+    try {
+        const p12Object = Utility.parseP12File(filePath, password, logger);
+        
+        // Store in cache with file modification time
+        cache.put(finalCacheKey, {
+            p12Object: p12Object,
+            fileLastModifiedTime: currentFileLastModifiedTime
+        });
+        
+        logger.debug(`Successfully cached P12/PFX object`);
+        return p12Object;
+        
+    } catch (error) {
+        logger.error(`Error parsing P12/PFX file: ${error.message}`);
+        ApiException.AuthException(`${error.message}. ${Constants.INCORRECT_KEY_PASS}`);
+    }
+};

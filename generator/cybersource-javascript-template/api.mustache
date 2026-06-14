@@ -1,0 +1,161 @@
+{{>licenseInfo}}
+{{=< >=}}(function(root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    // AMD. Register as an anonymous module.
+    define(['Authentication/MLEUtility', '<#invokerPackage><&invokerPackage>/</invokerPackage>ApiClient'<#imports>, '<#invokerPackage><&invokerPackage>/</invokerPackage><#modelPackage><&modelPackage>/</modelPackage><import>'</imports>], factory);
+  } else if (typeof module === 'object' && module.exports) {
+    // CommonJS-like environments that support module.exports, like Node.
+    module.exports = factory(require('../authentication/util/MLEUtility'), require('../ApiClient')<#imports>, require('../<#modelPackage><&modelPackage>/</modelPackage><import>')</imports>);
+  } else {
+    // Browser globals (root is window)
+    if (!root.<&moduleName>) {
+      root.<&moduleName> = {};
+    }
+    root.<&moduleName>.<&classname> = factory(root.Authentication.MLEUtility, root.<&moduleName>.ApiClient<#imports>, root.<&moduleName>.<import></imports>);
+  }
+}(this, function(MLEUtility, ApiClient<#imports>, <import></imports>) {
+  'use strict';
+
+<#emitJSDoc>  /**
+   * <baseName> service.
+   * @module <#invokerPackage><&invokerPackage>/</invokerPackage><#apiPackage><&apiPackage>/</apiPackage><classname>
+   * @version <projectVersion>
+   */
+
+  /**
+   * Constructs a new <&classname>. <#description>
+   * <description></description>
+   * @alias module:<#invokerPackage><&invokerPackage>/</invokerPackage><#apiPackage><apiPackage>/</apiPackage><classname>
+   * @class
+   * @param {module:<#invokerPackage><&invokerPackage>/</invokerPackage>ApiClient} apiClient Optional API client implementation to use,
+   * default to {@link module:<#invokerPackage><&invokerPackage>/</invokerPackage>ApiClient#instance} if unspecified.
+   */
+</emitJSDoc>  var exports = function(configObject, apiClient) {
+    this.apiClient = apiClient || ApiClient.instance;
+
+	this.apiClient.setConfiguration(configObject);
+	
+<#operations><#operation><#emitJSDoc><^usePromises>
+    /**
+     * Callback function to receive the result of the <operationId> operation.
+     * @callback module:<#invokerPackage><invokerPackage>/</invokerPackage><#apiPackage><apiPackage>/</apiPackage><classname>~<operationId>Callback
+     * @param {String} error Error message, if any.
+     * @param <#vendorExtensions.x-jsdoc-type>{<&vendorExtensions.x-jsdoc-type>} data The data returned by the service call.</vendorExtensions.x-jsdoc-type><^vendorExtensions.x-jsdoc-type>data This operation does not return a value.</vendorExtensions.x-jsdoc-type>
+     * @param {String} response The complete HTTP response.
+     */</usePromises>
+
+    /**<#summary>
+     * <summary></summary><#notes>
+     * <notes></notes><#allParams><#required>
+     * @param {<&vendorExtensions.x-jsdoc-type>} <paramName> <description></required></allParams><#hasOptionalParams>
+     * @param {Object} opts Optional parameters<#allParams><^required>
+     * @param {<&vendorExtensions.x-jsdoc-type>} opts.<paramName> <description><#defaultValue> (default to <.>)</defaultValue></required></allParams></hasOptionalParams><^usePromises>
+     * @param {module:<#invokerPackage><&invokerPackage>/</invokerPackage><#apiPackage><&apiPackage>/</apiPackage><&classname>~<operationId>Callback} callback The callback function, accepting three arguments: error, data, response<#returnType>
+     * data is of type: {@link <&vendorExtensions.x-jsdoc-type>}</returnType></usePromises><#usePromises>
+     * @return {Promise} a {@link https://www.promisejs.org/|Promise}<#returnType>, with an object containing data of type {@link <&vendorExtensions.x-jsdoc-type>} and HTTP response</returnType><^returnType>, with an object containing HTTP response</returnType></usePromises><#vendorExtensions.x-devcenter-metaData.SDK_ONLY_AddDisclaimer>
+     *
+     * DISCLAIMER : Cybersource may allow Customer to access, use, and/or test a Cybersource product or service that may still be in development or has not been market-tested ("Beta Product") solely for the purpose of evaluating the functionality or marketability of the Beta Product (a "Beta Evaluation"). Notwithstanding any language to the contrary, the following terms shall apply with respect to Customer's participation in any Beta Evaluation (and the Beta Product(s)) accessed thereunder): The Parties will enter into a separate form agreement detailing the scope of the Beta Evaluation, requirements, pricing, the length of the beta evaluation period ("Beta Product Form"). Beta Products are not, and may not become, Transaction Services and have not yet been publicly released and are offered for the sole purpose of internal testing and non-commercial evaluation. Customer's use of the Beta Product shall be solely for the purpose of conducting the Beta Evaluation. Customer accepts all risks arising out of the access and use of the Beta Products. Cybersource may, in its sole discretion, at any time, terminate or discontinue the Beta Evaluation. Customer acknowledges and agrees that any Beta Product may still be in development and that Beta Product is provided "AS IS" and may not perform at the level of a commercially available service, may not operate as expected and may be modified prior to release. CYBERSOURCE SHALL NOT BE RESPONSIBLE OR LIABLE UNDER ANY CONTRACT, TORT (INCLUDING NEGLIGENCE), OR OTHERWISE RELATING TO A BETA PRODUCT OR THE BETA EVALUATION (A) FOR LOSS OR INACCURACY OF DATA OR COST OF PROCUREMENT OF SUBSTITUTE GOODS, SERVICES OR TECHNOLOGY, (B) ANY CLAIM, LOSSES, DAMAGES, OR CAUSE OF ACTION ARISING IN CONNECTION WITH THE BETA PRODUCT; OR (C) FOR ANY INDIRECT, INCIDENTAL OR CONSEQUENTIAL DAMAGES INCLUDING, BUT NOT LIMITED TO, LOSS OF REVENUES AND LOSS OF PROFITS.</vendorExtensions.x-devcenter-metaData.SDK_ONLY_AddDisclaimer>
+     */
+</emitJSDoc>    this.<operationId><#usePromises>WithHttpInfo</usePromises> = function(<vendorExtensions.x-codegen-arg-list><^usePromises><#hasParams>, </hasParams>callback</usePromises>) {<#hasOptionalParams>
+      opts = opts || {};</hasOptionalParams>
+      var postBody = <#bodyParam><#required><paramName></required><^required>opts['<paramName>']</required></bodyParam><^bodyParam>null</bodyParam>;
+      <^bodyParam>
+      if ('<httpMethod>' == 'POST') {
+        postBody = '{}';
+      }
+      </bodyParam>
+<#allParams><#required>
+      // verify the required parameter '<paramName>' is set
+      if (<paramName> === undefined || <paramName> === null) {
+        throw new Error("Missing the required parameter '<paramName>' when calling <operationId>");
+      }
+</required></allParams>
+      <#bodyParam>
+      var SdkTracker = require('../utilities/tracking/SdkTracker');
+
+      var sdkTracker = new SdkTracker();
+      postBody = sdkTracker.insertDeveloperIdTracker(postBody, '<&vendorExtensions.x-jsdoc-type>', this.apiClient.merchantConfig.runEnvironment, this.apiClient.merchantConfig.defaultDeveloperId);
+      </bodyParam>
+
+      <#formParams>
+      const path = require('path');
+      const fs = require('fs');
+      const crypto = require('crypto');
+
+      file = path.resolve(file);
+
+      var boundary = crypto.randomBytes(16).toString('hex');
+      var delimiter = "-------------" + boundary;
+
+      var fileContents;
+      fileContents = fs.readFileSync(file, 'utf8');
+      </formParams>
+
+      var pathParams = {<#pathParams>
+        '<baseName>': <#required><paramName></required><^required>opts['<paramName>']</required><#hasMore>,</hasMore></pathParams>
+      };
+      var queryParams = {<#queryParams>
+        '<baseName>': <#collectionFormat>this.apiClient.buildCollectionParam(<#required><paramName></required><^required>opts['<paramName>']</required>, '<collectionFormat>')</collectionFormat><^collectionFormat><#required><paramName></required><^required>opts['<paramName>']</required></collectionFormat><#hasMore>,</hasMore></queryParams>
+      };
+      var headerParams = {<#headerParams>
+        '<baseName>': <#required><paramName></required><^required>opts['<paramName>']</required><#hasMore>,</hasMore></headerParams>
+      };
+      var formParams = {<#formParams>
+        [path.basename(<baseName>)]: <#collectionFormat>this.apiClient.buildCollectionParam(<#required><paramName></required><^required>opts['<paramName>']</required>, '<collectionFormat>')</collectionFormat><^collectionFormat><#required>fileContents</required><^required>opts['<paramName>']</required></collectionFormat><#hasMore>,</hasMore></formParams>
+      };
+
+      <#formParams>
+      const MultipartHelper = require('../utilities/multipart/MultipartHelper');
+      postBody = MultipartHelper.buildDataFiles(boundary, formParams);
+      </formParams>
+
+      var authNames = [<#authMethods>'<name>'<#hasMore>, </hasMore></authMethods>];
+      var contentTypes = <^formParams>[<#consumes>'<& mediaType>'<#hasMore>, </hasMore></consumes>]</formParams><#formParams>['multipart/form-data; boundary=' + delimiter]</formParams>;
+      var accepts = [<#produces>'<& mediaType>'<#hasMore>, </hasMore></produces>];
+      var returnType = <#returnType><&returnType></returnType><^returnType>null</returnType>;
+
+      //check isMLE for an api method 'this.<operationId>'
+      var inboundMLEStatus = <#vendorExtensions.x-devcenter-metaData.mleForRequest>'<vendorExtensions.x-devcenter-metaData.mleForRequest>'</vendorExtensions.x-devcenter-metaData.mleForRequest><^vendorExtensions.x-devcenter-metaData.mleForRequest>'false'</vendorExtensions.x-devcenter-metaData.mleForRequest>;
+      var isMLEForApi = MLEUtility.checkIsMLEForAPI(this.apiClient.merchantConfig, inboundMLEStatus, '<operationId>');
+      const isResponseMLEForApi = MLEUtility.checkIsResponseMLEForAPI(this.apiClient.merchantConfig, ['<operationId>']);
+
+      if (isMLEForApi === true) {
+        MLEUtility.encryptRequestPayload(this.apiClient.merchantConfig, postBody).then(postBody => {
+          return this.apiClient.callApi(
+            '<&path>', '<httpMethod>',
+            pathParams, queryParams, headerParams, formParams, postBody,
+            authNames, contentTypes, accepts, returnType, isResponseMLEForApi<^usePromises>, callback</usePromises>
+          );
+        });
+      } else {
+        return this.apiClient.callApi(
+          '<&path>', '<httpMethod>',
+          pathParams, queryParams, headerParams, formParams, postBody,
+          authNames, contentTypes, accepts, returnType, isResponseMLEForApi<^usePromises>, callback</usePromises>
+        );
+      }
+    }
+<#usePromises>
+    <#emitJSDoc>
+
+    /**<#summary>
+     * <summary></summary><#notes>
+     * <notes></notes><#allParams><#required>
+     * @param {<&vendorExtensions.x-jsdoc-type>} <paramName> <description></required></allParams><#hasOptionalParams>
+     * @param {Object} opts Optional parameters<#allParams><^required>
+     * @param {<&vendorExtensions.x-jsdoc-type>} opts.<paramName> <description><#defaultValue> (default to <.>)</defaultValue></required></allParams></hasOptionalParams><^usePromises>
+     * @param {module:<#invokerPackage><&invokerPackage>/</invokerPackage><#apiPackage><&apiPackage>/</apiPackage><&classname>~<operationId>Callback} callback The callback function, accepting three arguments: error, data, response<#returnType>
+     * data is of type: {@link <&vendorExtensions.x-jsdoc-type>}</returnType></usePromises><#usePromises>
+     * @return {Promise} a {@link https://www.promisejs.org/|Promise}<#returnType>, with data of type {@link <&vendorExtensions.x-jsdoc-type>}</returnType></usePromises>
+     */
+</emitJSDoc>    this.<operationId> = function(<vendorExtensions.x-codegen-arg-list>) {
+      return this.<operationId>WithHttpInfo(<vendorExtensions.x-codegen-arg-list>)
+        .then(function(response_and_data) {
+          return response_and_data.data;
+        });
+    }
+</usePromises>
+</operation></operations>  };
+
+  return exports;
+}));<={{ }}=>

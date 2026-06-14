@@ -1,0 +1,1059 @@
+'use strict';
+
+var Constants = require('../util/Constants');
+var Logger = require('../logging/Logger');
+var ApiException = require('../util/ApiException');
+var LogConfiguration = require('../logging/LogConfiguration');
+var path = require('path');
+var fs = require('fs');
+var path = require('path');
+var fs = require('fs');
+var Utility = require('../util/Utility');
+
+/**
+ * This function has all the merchentConfig properties getters and setters methods
+ * 
+ * @param  result 
+ */
+function MerchantConfig(result) {
+
+    /*Common Parameters*/
+    this.authenticationType = result.authenticationType;
+    this.url;
+    this.requestHost;
+    this.requestJsonPath = result.requestJsonPath;
+    this.merchantID = result.merchantID;
+    this.requestType;
+    this.requestTarget;
+    this.requestJsonData;
+
+    /* JWT Parameters*/
+    this.keysDirectory = result.keysDirectory;
+    this.keyAlias = result.keyAlias;
+    this.keyPass = result.keyPass;
+    this.keyType;
+    this.keyFilename = result.keyFileName;
+    this.jwtKeyType = (result.jwtKeyType && result.jwtKeyType.toUpperCase()) || Constants.JWT_KEY_TYPE_P12;
+    this.useHttpClient;
+
+    /* proxy Parameters*/
+    this.useProxy = result.useProxy;
+    this.proxyAddress = result.proxyAddress;
+    this.proxyPort = result.proxyPort;
+    this.proxyUser = result.proxyUser;
+    this.proxyPassword = result.proxyPassword;
+
+    this.sslCaCert = result.sslCaCert;
+    this.disableSSLVerification = result.disableSSLVerification;
+
+    /*HTTP Parameters*/
+    this.merchantKeyId = result.merchantKeyId;
+    this.merchantsecretKey = result.merchantsecretKey;
+
+    /* MetaKey Parameters */
+    this.useMetaKey = result.useMetaKey;
+    this.portfolioID = result.portfolioID;
+
+    /* MutualAuth Parameters */
+    this.enableClientCert = result.enableClientCert;
+    this.clientCertDir = result.clientCertDir;
+    this.sslClientCert = result.sslClientCert;
+    this.privateKey = result.privateKey;
+
+    /* OAuth Parameters */
+    this.clientId = result.clientId;
+    this.clientSecret = result.clientSecret;
+    this.accessToken = result.accessToken;
+    this.refreshToken = result.refreshToken;
+
+    this.runEnvironment = result.runEnvironment;
+
+    /* Intermediate Host */
+    this.intermediateHost = result.intermediateHost;
+
+    this.defaultDeveloperId = result.defaultDeveloperId;
+
+    this.pemFileDirectory = result.pemFileDirectory;
+
+    this.solutionId = result.solutionId;
+
+    this._isSDK = (result.isSDK === true || (typeof result.isSDK === "string" && result.isSDK.trim().toLowerCase() === "true"));
+
+    this.logConfiguration = new LogConfiguration(result.logConfiguration);
+
+    /* Default Custom Headers */
+    this.defaultHeaders = result.defaultHeaders;
+
+    //MLE Params for Request Body
+	/**
+	 * Flag to enable MLE (Message Level Encryption) for request body to all APIs in SDK which have optional support for MLE. 
+	 * This means the API can send both non-encrypted and encrypted requests.
+	 * Older flag "useMLEGlobally" is deprecated and will be used as alias/another name for enableRequestMLEForOptionalApisGlobally.
+	 */
+    this.enableRequestMLEForOptionalApisGlobally = result.enableRequestMLEForOptionalApisGlobally !== undefined && typeof result.enableRequestMLEForOptionalApisGlobally === "boolean" ? result.enableRequestMLEForOptionalApisGlobally :
+                                                    (result.useMLEGlobally !== undefined && typeof result.useMLEGlobally === "boolean" ? result.useMLEGlobally : false);
+    
+    // Validate that both flags are not set with different values
+    if (result.enableRequestMLEForOptionalApisGlobally !== undefined && typeof result.enableRequestMLEForOptionalApisGlobally === "boolean" &&
+        result.useMLEGlobally !== undefined && typeof result.useMLEGlobally === "boolean" &&
+        result.enableRequestMLEForOptionalApisGlobally !== result.useMLEGlobally) {
+        var logger = Logger.getLogger(this, 'MerchantConfig');
+        ApiException.ApiException("enableRequestMLEForOptionalApisGlobally and useMLEGlobally must have the same value if both are provided.", logger);
+    }
+    
+    /**
+	 * Flag to disable MLE (Message Level Encryption) for request body to APIs in SDK which have mandatory MLE requirement when sending calls.
+	 */
+    this.disableRequestMLEForMandatoryApisGlobally = result.disableRequestMLEForMandatoryApisGlobally !== undefined ? result.disableRequestMLEForMandatoryApisGlobally : false;
+
+    /**
+     * Assigns internal maps to control MLE for request and response per API function,
+     * based on the mapToControlMLEonAPI property.
+     */
+    //both fields used for internal purpose only not exposed for merchants to set. Both sets from mapToControlMLEonAPI internally.
+    this.internalMapToControlRequestMLEonAPI = new Map();
+    this.internalMapToControlResponseMLEonAPI = new Map();
+
+    this.mapToControlMLEonAPI = result.mapToControlMLEonAPI;
+
+    /**
+	 * Optional parameter. User can pass a custom requestMleKeyAlias to fetch from the certificate.
+	 * Older flag "mleKeyAlias" is deprecated and will be used as alias/another name for requestMleKeyAlias.
+	 */
+    this.requestmleKeyAlias = result.requestmleKeyAlias !== undefined && typeof result.requestmleKeyAlias == "string" ? result.requestmleKeyAlias :
+                             (result.mleKeyAlias !== undefined && typeof result.mleKeyAlias == "string" ? result.mleKeyAlias : Constants.DEFAULT_MLE_ALIAS_FOR_CERT);
+
+    /**
+	 * Parameter to pass the request MLE public certificate path.
+	 */
+    this.mleForRequestPublicCertPath = result.mleForRequestPublicCertPath;
+
+    this.maxIdleSockets = result.maxIdleSockets; // Value should be non-negative
+    this.freeSocketTimeout = result.freeSocketTimeout; // Value should be non-negative and greater than or equal to 4000
+    /**
+	 * Flag to enable MLE (Message Level Encryption) for response body for all APIs in SDK to get MLE Response(encrypted response) if supported by API. 
+	 */
+	this.enableResponseMleGlobally = result.enableResponseMleGlobally !== undefined ? result.enableResponseMleGlobally : false;
+
+	/**
+	 * Parameter to pass the KID value for the MLE response public certificate. This value will be provided in the merchant portal when retrieving the MLE response certificate.
+	 */
+	this.responseMleKID = result.responseMleKID;
+
+	/**
+	 * Path to the private key file used for Response MLE decryption by the SDK.
+	 * Supported formats: .p12, .key, .pem, etc.
+	 */
+	this.responseMlePrivateKeyFilePath = result.responseMlePrivateKeyFilePath;
+
+	/**
+	 * Password for the private key file used in Response MLE decryption by the SDK.
+	 * Required for .p12 files or encrypted private keys.
+	 */
+	this.responseMlePrivateKeyFilePassword = result.responseMlePrivateKeyFilePassword;
+
+	/**
+	 * PrivateKey instance used for Response MLE decryption by the SDK.
+	 * Optional — either provide this object directly or specify the private key file path via configuration.
+	 */
+	this.setResponseMlePrivateKey(result.responseMlePrivateKey);
+
+
+    this.mapToControlMLEonAPI = result.mapToControlMLEonAPI;
+    /* Fallback logic*/
+
+    if (this.mapToControlMLEonAPI != null) {
+        validateAndSetMapToControlMLEonAPI.call(this, this.mapToControlMLEonAPI);
+    }
+    this.defaultPropValues();
+}
+
+MerchantConfig.prototype.getAuthenticationType = function getAuthenticationType() {
+    return this.authenticationType;
+};
+
+MerchantConfig.prototype.setAuthenticationType = function setAuthenticationType(authType) {
+    this.authenticationType = authType;
+};
+
+MerchantConfig.prototype.setMerchantID = function setMerchantID(merchantID) {
+    this.merchantID = merchantID;
+};
+
+MerchantConfig.prototype.setRequestHost = function setRequestHost(requestHost) {
+    this.requestHost = requestHost;
+};
+
+MerchantConfig.prototype.setKeyAlias = function setKeyAlias(keyAlias) {
+    this.keyAlias = keyAlias;
+};
+
+MerchantConfig.prototype.setKeyPass = function setKeyPass(keyPass) {
+    this.keyPass = keyPass;
+};
+
+MerchantConfig.prototype.setKeysDirectory = function setKeysDirectory(keysDirectory) {
+    this.keysDirectory = keysDirectory;
+};
+
+MerchantConfig.prototype.setMerchantKeyID = function setMerchantKeyID(merchantKeyId) {
+    this.merchantKeyId = merchantKeyId;
+};
+
+MerchantConfig.prototype.setMerchantsecretKey = function setMerchantsecretKey(merchantsecretKey) {
+    this.merchantsecretKey = merchantsecretKey;
+};
+
+MerchantConfig.prototype.setUseMetaKey = function setUseMetaKey(useMetaKey) {
+    this.useMetaKey = useMetaKey;
+};
+
+MerchantConfig.prototype.setPortfolioID = function setPortfolioID(portfolioID) {
+    this.portfolioID = portfolioID;
+};
+
+MerchantConfig.prototype.setEnableClientCert = function setEnableClientCert(enableClientCert) {
+    this.enableClientCert = enableClientCert;
+};
+
+MerchantConfig.prototype.setClientCertDir = function setClientCertDir(clientCertDir) {
+    this.clientCertDir = clientCertDir;
+};
+
+MerchantConfig.prototype.setSSLClientCert = function setSSLClientCert(sslClientCert) {
+    this.sslClientCert = sslClientCert;
+};
+
+MerchantConfig.prototype.setPrivateKey = function setPrivateKey(privateKey) {
+    this.privateKey = privateKey;
+};
+
+MerchantConfig.prototype.setClientId = function setClientId(clientId) {
+    this.clientId = clientId;
+};
+
+MerchantConfig.prototype.setClientSecret = function setClientSecret(clientSecret) {
+    this.clientSecret = clientSecret;
+};
+
+MerchantConfig.prototype.setAccessToken = function setAccessToken(accessToken) {
+    this.accessToken = accessToken;
+};
+
+MerchantConfig.prototype.setRefreshToken = function setRefreshToken(refreshToken) {
+    this.refreshToken = refreshToken;
+};
+
+MerchantConfig.prototype.setSolutionId = function setSolutionId(solutionId) {
+    this.solutionId = solutionId;
+};
+
+MerchantConfig.prototype.isSDK = function isSDK() {
+    return this._isSDK;
+};
+
+MerchantConfig.prototype.setSDK = function setSDK(isSDK) {
+    this._isSDK = (isSDK === true || (typeof isSDK === "string" && isSDK.trim().toLowerCase() === "true"));
+};
+
+MerchantConfig.prototype.setURL = function setURL(url) {
+    this.url = url;
+};
+
+MerchantConfig.prototype.getMerchantID = function getMerchantID() {
+    return this.merchantID;
+};
+
+MerchantConfig.prototype.getRequestHost = function getRequestHost() {
+    return this.requestHost;
+};
+
+MerchantConfig.prototype.getKeyAlias = function getKeyAlias() {
+    return this.keyAlias;
+};
+
+MerchantConfig.prototype.getKeyPass = function getKeyPass() {
+    return this.keyPass;
+};
+
+MerchantConfig.prototype.getUseMetaKey = function getUseMetaKey() {
+    return this.useMetaKey;
+};
+
+MerchantConfig.prototype.getPortfolioID = function getPortfolioID() {
+    return this.portfolioID;
+};
+
+MerchantConfig.prototype.getEnableClientCert = function getEnableClientCert() {
+    return this.enableClientCert;
+};
+
+MerchantConfig.prototype.getClientCertDir = function getClientCertDir() {
+    return this.clientCertDir;
+};
+
+MerchantConfig.prototype.getSSLClientCert = function getSSLClientCert() {
+    return this.sslClientCert;
+};
+
+MerchantConfig.prototype.getPrivateKey = function getPrivateKey() {
+    return this.privateKey;
+};
+
+MerchantConfig.prototype.getClientId = function getClientId() {
+    return this.clientId;
+};
+
+MerchantConfig.prototype.getClientSecret = function getClientSecret() {
+    return this.clientSecret;
+};
+
+MerchantConfig.prototype.getAccessToken = function getAccessToken() {
+    return this.accessToken;
+};
+
+MerchantConfig.prototype.getRefreshToken = function getRefreshToken() {
+    return this.refreshToken;
+};
+
+MerchantConfig.prototype.getKeysDirectory = function getKeysDirectory() {
+    return this.keysDirectory;
+};
+
+MerchantConfig.prototype.getMerchantKeyID = function getMerchantKeyID() {
+    return this.merchantKeyId;
+};
+
+MerchantConfig.prototype.getMerchantsecretKey = function getMerchantsecretKey() {
+    return this.merchantsecretKey;
+};
+
+MerchantConfig.prototype.getSolutionId = function getSolutionId() {
+    return this.solutionId;
+};
+
+MerchantConfig.prototype.getURL = function getURL() {
+    return this.url;
+};
+
+MerchantConfig.prototype.getRequestTarget = function getRequestTarget() {
+    return this.requestTarget;
+};
+
+MerchantConfig.prototype.setRequestJsonData = function setRequestJsonData(requestJsonData) {
+    this.requestJsonData = requestJsonData;
+};
+
+MerchantConfig.prototype.getRequestJsonData = function getRequestJsonData() {
+    return this.requestJsonData;
+};
+
+MerchantConfig.prototype.setRequestTarget = function setRequestTarget(requestTarget) {
+    this.requestTarget = requestTarget;
+};
+
+MerchantConfig.prototype.getRequestJsonPath = function getRequestJsonPath() {
+    return this.requestJsonPath;
+}
+
+MerchantConfig.prototype.setRequestJsonPath = function setRequestJsonPath(requestJsonPath) {
+    this.requestJsonPath = requestJsonPath;
+}
+
+MerchantConfig.prototype.getRequestType = function getRequestType() {
+    return this.requestType;
+}
+
+MerchantConfig.prototype.setRequestType = function setRequestType(requestType) {
+    this.requestType = requestType;
+}
+
+MerchantConfig.prototype.getRunEnvironment = function getRunEnvironment() {
+    return this.runEnvironment;
+}
+
+MerchantConfig.prototype.setRunEnvironment = function setRunEnvironment(runEnvironment) {
+    this.runEnvironment = runEnvironment;
+}
+
+MerchantConfig.prototype.getIntermediateHost = function getIntermediateHost() {
+    return this.intermediateHost;
+}
+
+MerchantConfig.prototype.setIntermediateHost = function setIntermediateHost(intermediateHost) {
+    this.intermediateHost = intermediateHost;
+}
+
+MerchantConfig.prototype.getDefaultDeveloperId = function getDefaultDeveloperId() {
+    return this.defaultDeveloperId;
+}
+
+MerchantConfig.prototype.setDefaultDeveloperId = function setDefaultDeveloperId(defaultDeveloperId) {
+    this.defaultDeveloperId = defaultDeveloperId;
+}
+
+MerchantConfig.prototype.getProxyAddress = function getProxyAddress() {
+    return this.proxyAddress;
+}
+
+MerchantConfig.prototype.setProxyAddress = function setProxyAddress(proxyAddress) {
+    this.proxyAddress = proxyAddress;
+}
+
+MerchantConfig.prototype.getProxyPort = function getProxyPort() {
+    return this.proxyPort;
+}
+
+MerchantConfig.prototype.setProxyPort = function setProxyPort(proxyPort) {
+    this.proxyPort = proxyPort;
+}
+
+MerchantConfig.prototype.getUseProxy = function getUseProxy() {
+    return this.useProxy;
+}
+
+MerchantConfig.prototype.setUseProxy = function setUseProxy(useProxy) {
+    this.useProxy = useProxy;
+}
+
+MerchantConfig.prototype.getProxyUser = function getProxyUser() {
+    return this.proxyUser;
+}
+
+MerchantConfig.prototype.setProxyUser = function setProxyUser(proxyUser) {
+    this.proxyUser = proxyUser;
+}
+
+
+MerchantConfig.prototype.getProxyPassword = function getProxyPassword() {
+    return this.proxyPassword;
+}
+
+MerchantConfig.prototype.setProxyPassword = function setProxyPassword(proxyPassword) {
+    this.proxyPassword = proxyPassword;
+}
+
+MerchantConfig.prototype.getSslCaCert = function getSslCaCert() {
+    return this.sslCaCert;
+}
+
+MerchantConfig.prototype.setSslCaCert = function setSslCaCert(sslCaCert) {
+    this.sslCaCert = sslCaCert;
+}
+
+MerchantConfig.prototype.getDisableSSLVerification = function getDisableSSLVerification() {
+    return this.disableSSLVerification;
+}
+
+MerchantConfig.prototype.setDisableSSLVerification = function setDisableSSLVerification(disableSSLVerification) {
+    this.disableSSLVerification = disableSSLVerification;
+}
+
+MerchantConfig.prototype.getKeyFileName = function getKeyFileName() {
+    return this.keyFilename;
+}
+
+MerchantConfig.prototype.setKeyFileName = function setKeyFileName(keyFilename) {
+    this.keyFilename = keyFilename;
+}
+
+MerchantConfig.prototype.getJwtKeyType = function getJwtKeyType() {
+    return this.jwtKeyType;
+}
+
+MerchantConfig.prototype.setJwtKeyType = function setJwtKeyType(jwtKeyType) {
+    jwtKeyType = String(jwtKeyType).toUpperCase();
+    this.jwtKeyType = jwtKeyType;
+}
+
+MerchantConfig.prototype.isSharedSecretKeyType = function isSharedSecretKeyType() {
+    return this.jwtKeyType.toUpperCase() === Constants.JWT_KEY_TYPE_SHARED_SECRET.toUpperCase();
+}
+
+MerchantConfig.prototype.checkJwtKeyType = function checkJwtKeyType(logger) {
+    if (this.jwtKeyType !== Constants.JWT_KEY_TYPE_P12 && this.jwtKeyType !== Constants.JWT_KEY_TYPE_SHARED_SECRET) {
+        ApiException.ApiException(Constants.INVALID_JWT_KEY_TYPE, logger);
+    }
+}
+
+MerchantConfig.prototype.getLogConfiguration = function getLogConfiguration() {
+    return this.logConfiguration;
+}
+
+MerchantConfig.prototype.setLogConfiguration = function setLogConfiguration(logConfig) {
+    this.logConfiguration = new LogConfiguration(logConfig);
+}
+
+MerchantConfig.prototype.getDefaultHeaders = function getDefaultHeaders() {
+    return this.defaultHeaders;
+}
+
+MerchantConfig.prototype.setDefaultHeaders = function setDefaultHeaders(defaultHeaders) {
+    return this.defaultHeaders;
+}
+
+MerchantConfig.prototype.getpemFileDirectory = function getpemFileDirectory() {
+    return this.pemFileDirectory;
+}
+
+MerchantConfig.prototype.setpemFileDirectory = function getpemFileDirectory(pemFileDirectory) {
+    this.pemFileDirectory = pemFileDirectory;
+}
+
+MerchantConfig.prototype.getEnableRequestMLEForOptionalApisGlobally = function getEnableRequestMLEForOptionalApisGlobally() {
+    return this.enableRequestMLEForOptionalApisGlobally;
+}
+
+MerchantConfig.prototype.setEnableRequestMLEForOptionalApisGlobally = function setEnableRequestMLEForOptionalApisGlobally(enableRequestMLEForOptionalApisGlobally) {
+    this.enableRequestMLEForOptionalApisGlobally = enableRequestMLEForOptionalApisGlobally;
+}
+
+MerchantConfig.prototype.getDisableRequestMLEForMandatoryApisGlobally = function getDisableRequestMLEForMandatoryApisGlobally() {
+    return this.disableRequestMLEForMandatoryApisGlobally;
+}
+
+MerchantConfig.prototype.setDisableRequestMLEForMandatoryApisGlobally = function setDisableRequestMLEForMandatoryApisGlobally(disableRequestMLEForMandatoryApisGlobally) {
+    this.disableRequestMLEForMandatoryApisGlobally = disableRequestMLEForMandatoryApisGlobally;
+}
+
+MerchantConfig.prototype.getMapToControlMLEonAPI = function getMapToControlMLEonAPI() {
+    return this.mapToControlMLEonAPI;
+}
+
+MerchantConfig.prototype.setMapToControlMLEonAPI = function setMapToControlMLEonAPI(mapToControlMLEonAPI) {
+    this.mapToControlMLEonAPI = mapToControlMLEonAPI;
+}
+
+MerchantConfig.prototype.getRequestmleKeyAlias = function getRequestmleKeyAlias() {
+    return this.requestmleKeyAlias;
+}
+
+MerchantConfig.prototype.setRequestmleKeyAlias = function setRequestmleKeyAlias(requestmleKeyAlias) {
+    this.requestmleKeyAlias = requestmleKeyAlias;
+}
+
+MerchantConfig.prototype.getMleForRequestPublicCertPath = function getMleForRequestPublicCertPath() {
+    return this.mleForRequestPublicCertPath;
+}
+
+MerchantConfig.prototype.setMleForRequestPublicCertPath = function setMleForRequestPublicCertPath(mleForRequestPublicCertPath) {
+    this.mleForRequestPublicCertPath = mleForRequestPublicCertPath;
+}
+
+MerchantConfig.prototype.getEnableResponseMleGlobally = function getEnableResponseMleGlobally() {
+    return this.enableResponseMleGlobally;
+}
+
+MerchantConfig.prototype.setEnableResponseMleGlobally = function setEnableResponseMleGlobally(enableResponseMleGlobally) {
+    this.enableResponseMleGlobally = enableResponseMleGlobally;
+}
+
+MerchantConfig.prototype.getResponseMleKID = function getResponseMleKID() {
+    return this.responseMleKID;
+}
+
+MerchantConfig.prototype.setResponseMleKID = function setResponseMleKID(responseMleKID) {
+    this.responseMleKID = responseMleKID;
+}
+
+MerchantConfig.prototype.getResponseMlePrivateKeyFilePath = function getResponseMlePrivateKeyFilePath() {
+    return this.responseMlePrivateKeyFilePath;
+}
+
+MerchantConfig.prototype.setResponseMlePrivateKeyFilePath = function setResponseMlePrivateKeyFilePath(responseMlePrivateKeyFilePath) {
+    this.responseMlePrivateKeyFilePath = responseMlePrivateKeyFilePath;
+}
+
+MerchantConfig.prototype.getResponseMlePrivateKeyFilePassword = function getResponseMlePrivateKeyFilePassword() {
+    return this.responseMlePrivateKeyFilePassword;
+}
+
+MerchantConfig.prototype.setResponseMlePrivateKeyFilePassword = function setResponseMlePrivateKeyFilePassword(responseMlePrivateKeyFilePassword) {
+    this.responseMlePrivateKeyFilePassword = responseMlePrivateKeyFilePassword;
+}
+
+MerchantConfig.prototype.getResponseMlePrivateKey = function getResponseMlePrivateKey() {
+    return this.responseMlePrivateKey;
+}
+
+MerchantConfig.prototype.setResponseMlePrivateKey = function setResponseMlePrivateKey(responseMlePrivateKey) {
+    var logger = Logger.getLogger(this, 'MerchantConfig');
+    
+    if (responseMlePrivateKey) {
+        logger.debug('Processing response MLE private key');
+        
+        try {
+            const pemKey = Utility.parseAndReturnPem(
+                responseMlePrivateKey, 
+                logger, 
+                this.responseMlePrivateKeyFilePassword,
+                'responseMlePrivateKeyFilePassword'
+            );
+            logger.debug('Successfully parsed response MLE private key');
+            this.responseMlePrivateKey = pemKey;
+        } catch (error) {
+            logger.error(`Error parsing response MLE private key: ${error.message}`);
+            throw new ApiException.ApiException(`Error parsing response MLE private key: ${error.message}`, logger);
+        }
+    } else {
+        this.responseMlePrivateKey = responseMlePrivateKey;
+    }
+}
+
+MerchantConfig.prototype.getInternalMapToControlResponseMLEonAPI = function getInternalMapToControlResponseMLEonAPI() {
+    return this.internalMapToControlResponseMLEonAPI;
+}
+
+MerchantConfig.prototype.getInternalMapToControlRequestMLEonAPI = function getInternalMapToControlRequestMLEonAPI() {
+    return this.internalMapToControlRequestMLEonAPI;
+}
+
+MerchantConfig.prototype.getP12FilePath = function getP12FilePath() {
+    return path.resolve(path.join(this.getKeysDirectory(), this.getKeyFileName() + '.p12'));
+}
+
+MerchantConfig.prototype.getMaxIdleSockets = function getMaxIdleSockets() {
+    return this.maxIdleSockets;
+}
+
+MerchantConfig.prototype.setMaxIdleSockets = function setMaxIdleSockets(maxIdleSockets) {
+    this.maxIdleSockets = maxIdleSockets;
+}
+
+MerchantConfig.prototype.getFreeSocketTimeout = function getFreeSocketTimeout() {
+    return this.freeSocketTimeout;
+}
+
+MerchantConfig.prototype.setFreeSocketTimeout = function setFreeSocketTimeout(freeSocketTimeout) {
+    this.freeSocketTimeout = freeSocketTimeout;
+}
+
+MerchantConfig.prototype.runEnvironmentCheck = function runEnvironmentCheck(logger) {
+
+    /*url*/
+    if (this.runEnvironment === null || this.runEnvironment === "" || this.runEnvironment === undefined) {
+        ApiException.ApiException(Constants.RUN_ENVIRONMENT_REQ, logger);
+    }
+    else {
+        if (typeof (this.runEnvironment) !== "string") {
+            this.runEnvironment = this.runEnvironment.toString();
+        }
+
+        if (Constants.OLD_RUN_ENVIRONMENT_CONSTANTS.includes(this.runEnvironment.toUpperCase())) {
+            ApiException.ApiException(Constants.DEPRECATED_RUN_ENVIRONMENT, logger);
+        }
+
+        this.setRequestHost(this.runEnvironment);
+    }
+
+}
+
+
+//This method is for fallback 
+MerchantConfig.prototype.defaultPropValues = function defaultPropValues() {
+
+    var warningMessage = "";
+    //fallback for missing values
+    this.logConfiguration.getDefaultLoggingProperties(warningMessage);
+
+    var logger = Logger.getLogger(this, 'MerchantConfig');
+    logger.info(Constants.BEGIN_TRANSACTION);
+
+    if (warningMessage.length > 0)
+        logger.warn(warningMessage);
+
+    this.runEnvironmentCheck(logger);
+
+    if (this.authenticationType === null || this.authenticationType === "" || this.authenticationType === undefined) {
+        ApiException.ApiException(Constants.AUTHENTICATION_REQ, logger);
+    }
+
+    if (typeof (this.useMetaKey) !== "boolean") {
+        this.useMetaKey = false;
+    }
+    else if (this.useMetaKey && (this.portfolioID === null || this.portfolioID === "" || this.portfolioID === undefined))
+    {
+        ApiException.ApiException(Constants.PORTFOLIO_ID_REQ, logger);
+    }
+	else if (this.useMetaKey && typeof (this.portfolioID) !== "string") {
+		this.portfolioID = this.portfolioID.toString();
+	}
+
+    if (typeof (this.disableSSLVerification) !== "boolean") {
+        this.disableSSLVerification = false;
+    } else if (this.disableSSLVerification) {
+        logger.warn("SSL Verification has been disabled. This is NOT advised. DO NOT USE THIS CODE IN PRODUCTION.");
+    }
+
+    if (typeof (this.enableClientCert) !== "boolean") {
+        this.enableClientCert = false;
+    }
+    else if (this.enableClientCert)
+    {
+        if (this.clientCertDir === null || this.clientCertDir === "" || this.clientCertDir === undefined) {
+            ApiException.ApiException(Constants.CLIENT_CERT_DIR_EMPTY, logger);
+        }
+        else if (typeof (this.clientCertDir) !== "string") {
+            this.clientCertDir = this.clientCertDir.toString();
+        }
+        if (this.sslClientCert === null || this.sslClientCert === "" || this.sslClientCert === undefined) {
+            ApiException.ApiException(Constants.SSL_CLIENT_CERT_EMPTY, logger);
+        }
+        else if (typeof (this.sslClientCert) !== "string") {
+            this.sslClientCert = this.sslClientCert.toString();
+        }
+        if (this.privateKey === null || this.privateKey === "" || this.privateKey === undefined) {
+            ApiException.ApiException(Constants.PRIVATE_KEY_EMPTY, logger);
+        }
+        else if (typeof (this.privateKey) !== "string") {
+            this.privateKey = this.privateKey.toString();
+        }
+        
+        var certFile = path.resolve(path.join(this.clientCertDir, this.sslClientCert));
+        var keyFile = path.resolve(path.join(this.clientCertDir, this.privateKey));
+
+        if (!(fs.existsSync(keyFile) && fs.existsSync(certFile)))
+        {
+            ApiException.ApiException(Constants.FILE_NOT_FOUND, logger);
+        }
+
+        if (this.sslCaCert) {
+            var sslCaCert = path.resolve(this.sslCaCert);
+
+            if (!fs.existsSync(sslCaCert)) {
+                ApiException.ApiException(Constants.FILE_NOT_FOUND, logger);
+            }
+        }
+    }
+
+
+    //authentication mechanism specific checks
+    if (typeof (this.authenticationType) === "string") {
+        if (this.authenticationType.toLowerCase() === Constants.HTTP) {
+            // verifying mandatory properties
+            if (this.merchantID === null || this.merchantID === "" || this.merchantID === undefined) {
+                ApiException.ApiException(Constants.MERCHANTID_REQ, logger);
+            }
+            else if (typeof (this.merchantID) !== "string") {
+                this.merchantID = this.merchantID.toString();
+            }
+            if (this.merchantKeyId === null || this.merchantKeyId === "" || this.merchantKeyId === undefined) {
+                ApiException.ApiException(Constants.MERCHANT_KEY_ID_REQ, logger);
+            }
+            else if (typeof (this.merchantKeyId) !== "string") {
+                this.merchantKeyId = this.merchantKeyId.toString();
+            }
+
+            if (this.merchantsecretKey === null || this.merchantsecretKey === "" || this.merchantsecretKey === undefined) {
+                ApiException.ApiException(Constants.MERCHANT_SECRET_KEY_REQ, logger);
+            }
+            else if (typeof (this.merchantsecretKey) !== "string") {
+                this.merchantsecretKey = this.merchantsecretKey.toString();
+            }
+        }
+
+        else if (this.authenticationType.toLowerCase() === Constants.JWT) {
+            if (this.merchantID === null || this.merchantID === "" || this.merchantID === undefined) {
+                ApiException.ApiException(Constants.MERCHANTID_REQ, logger);
+            }
+            else if (typeof (this.merchantID) !== "string") {
+                this.merchantID = this.merchantID.toString();
+            }
+
+            // Validate jwtKeyType
+            this.checkJwtKeyType(logger);
+
+            if (this.isSharedSecretKeyType()) {
+                // Shared Secret validation
+                if (this.merchantKeyId === null || this.merchantKeyId === "" || this.merchantKeyId === undefined) {
+                    ApiException.ApiException(Constants.MERCHANT_KEY_ID_REQ, logger);
+                }
+                else if (typeof (this.merchantKeyId) !== "string") {
+                    this.merchantKeyId = this.merchantKeyId.toString();
+                }
+
+                if (this.merchantsecretKey === null || this.merchantsecretKey === "" || this.merchantsecretKey === undefined) {
+                    ApiException.ApiException(Constants.MERCHANT_SECRET_KEY_REQ, logger);
+                }
+                else if (typeof (this.merchantsecretKey) !== "string") {
+                    this.merchantsecretKey = this.merchantsecretKey.toString();
+                }
+            } else {
+                // P12 validation (existing behavior)
+                if (this.keyAlias === null || this.keyAlias === "" || this.keyAlias === undefined) {
+                    this.keyAlias = this.merchantID;
+                    logger.warn(Constants.KEY_ALIAS_NULL_EMPTY);
+                }
+                if (!this.useMetaKey && this.keyAlias !== this.merchantID) {
+                    this.keyAlias = this.merchantID;
+                    logger.warn(Constants.INCORRECT_KEY_ALIAS);
+                } else if (this.useMetaKey && this.keyAlias !== this.portfolioID) {
+                    this.keyAlias = this.portfolioID;
+                    logger.warn(Constants.INCORRECT_KEY_ALIAS_FOR_METAKEY);
+                }
+
+                if (this.keyPass === null || this.keyPass === "" || this.keyPass === undefined) {
+                    this.keyPass = this.merchantID;
+                    logger.warn(Constants.KEY_PASS_EMPTY);
+                }
+
+                if (this.keysDirectory === null || this.keysDirectory === "" || this.keysDirectory === undefined) {
+                    this.keysDirectory = Constants.DEFAULT_KEYS_DIRECTORY;
+                    logger.warn(Constants.KEY_DIRECTORY_EMPTY);
+                }
+
+                if (this.keyFilename === null || this.keyFilename === "" || this.keyFilename === undefined) {
+                    this.keyFilename = this.merchantID;
+                    logger.warn(Constants.KEY_FILE_EMPTY);
+                }
+                try {
+                    fs.accessSync(this.getP12FilePath(), fs.constants.R_OK);
+                } catch (err) {
+                    ApiException.ApiException("Merchant p12 certificate file not found or not readable: " + this.getP12FilePath());
+                }
+            }
+        }
+        else if (this.authenticationType.toLowerCase() === Constants.OAUTH)
+        {
+            if (this.accessToken === null || this.accessToken === "" || this.accessToken === undefined) {
+                ApiException.ApiException(Constants.ACCESS_TOKEN_EMPTY, logger);
+            }
+            else if (typeof (this.accessToken) !== "string") {
+                this.accessToken = this.accessToken.toString();
+            }
+            if (this.refreshToken === null || this.refreshToken === "" || this.refreshToken === undefined) {
+                ApiException.ApiException(Constants.REFRESH_TOKEN_EMPTY, logger);
+            }
+            else if (typeof (this.refreshToken) !== "string") {
+                this.refreshToken = this.refreshToken.toString();
+            }
+        }
+        else if (this.authenticationType.toLowerCase() === Constants.MUTUAL_AUTH && this.enableClientCert)
+        {
+            if (this.clientId === null || this.clientId === "" || this.clientId === undefined) {
+                ApiException.ApiException(Constants.CLIENT_ID_EMPTY, logger);
+            }
+            else if (typeof (this.clientId) !== "string") {
+                this.clientId = this.clientId.toString();
+            }
+            if (this.clientSecret === null || this.clientSecret === "" || this.clientSecret === undefined) {
+                ApiException.ApiException(Constants.CLIENT_SECRET_EMPTY, logger);
+            }
+            else if (typeof (this.clientSecret) !== "string") {
+                this.clientSecret = this.clientSecret.toString();
+            }
+        }
+        else {
+            ApiException.ApiException(Constants.AUTH_ERROR, logger);
+        }
+    }
+    else {
+        ApiException.ApiException(Constants.AUTH_ERROR, logger);
+    }
+
+    //set the MLE key alias either from merchant config or default value
+    if (!this.requestmleKeyAlias || !this.requestmleKeyAlias.trim()) {
+        this.requestmleKeyAlias = Constants.DEFAULT_MLE_ALIAS_FOR_CERT;
+    }
+
+    // Validate maxIdleSockets is non-negative and not less than default
+    if (this.maxIdleSockets !== null && this.maxIdleSockets !== undefined && (this.maxIdleSockets <= 0 || this.maxIdleSockets < Constants.DEFAULT_MAX_IDLE_SOCKETS)) {
+        this.maxIdleSockets = Constants.DEFAULT_MAX_IDLE_SOCKETS;
+        logger.warn("maxIdleSockets cannot be non-negative or less than default. Setting to default value " + Constants.DEFAULT_MAX_IDLE_SOCKETS + ".");
+    }
+
+    // Validate userDefinedTimeout is non-negative and not less than default
+    if (this.userDefinedTimeout !== null && this.userDefinedTimeout !== undefined && (this.userDefinedTimeout <= 0 || this.userDefinedTimeout < Constants.DEFAULT_USER_DEFINED_TIMEOUT)) {
+        this.userDefinedTimeout = Constants.DEFAULT_USER_DEFINED_TIMEOUT;
+        logger.warn("userDefinedTimeout cannot be non-negative or less than default (value should be in milliseconds). Setting to default value " + Constants.DEFAULT_USER_DEFINED_TIMEOUT + ".");
+    }
+
+    //enableRequestMLEForOptionalApisGlobally check for auth Type
+    if (this.enableRequestMLEForOptionalApisGlobally === true || this.internalMapToControlRequestMLEonAPI != null) {
+        if (this.enableRequestMLEForOptionalApisGlobally === true && this.authenticationType.toLowerCase() !== Constants.JWT) {
+            ApiException.ApiException("Request MLE is only supported in JWT auth type", logger);
+        }
+
+        if (this.internalMapToControlRequestMLEonAPI != null && typeof (this.internalMapToControlRequestMLEonAPI) !== "object") {
+            ApiException.ApiException("mapToControlMLEonAPI in merchantConfig should be key value pair", logger);
+        }
+
+        if (this.internalMapToControlRequestMLEonAPI != null && Object.keys(this.internalMapToControlRequestMLEonAPI).length !== 0) {
+            var hasTrueValue = false;
+            for (const[_, value] of Object.entries(this.internalMapToControlRequestMLEonAPI)) {
+                if (value === true) {
+                    hasTrueValue = true;
+                    break;
+                }
+            }
+            if (hasTrueValue && this.authenticationType.toLowerCase() !== Constants.JWT) {
+                ApiException.ApiException("Request MLE is only supported in JWT auth type", logger);
+            }
+        }
+    }
+    if (this.mleForRequestPublicCertPath) {
+    // First check if the file exists and is readable
+        try {
+            fs.accessSync(this.mleForRequestPublicCertPath, fs.constants.R_OK);
+        } catch (err) {
+            const errorType = err.code === 'ENOENT' ? 'does not exist' : 'is not readable';
+            ApiException.ApiException(`mleForRequestPublicCertPath file ${errorType}: ${this.mleForRequestPublicCertPath} (${err.message})`, logger);
+        }
+
+        let stats;
+        try {
+            stats = fs.statSync(this.mleForRequestPublicCertPath);
+        } catch (err) {
+            ApiException.ApiException(`Error checking file stats for mleForRequestPublicCertPath: ${this.mleForRequestPublicCertPath} (${err.message})`, logger);
+        }
+
+        // Check if it's a file
+        if (stats.isFile() === false) {
+            ApiException.ApiException(`mleForRequestPublicCertPath is not a file: ${this.mleForRequestPublicCertPath}`, logger);
+        }
+    }
+
+
+    const isResponseMleConfigured = this.enableResponseMleGlobally ||
+        (this.internalMapToControlResponseMLEonAPI?.size > 0 &&
+        Array.from(this.internalMapToControlResponseMLEonAPI.values()).some(value => value === true));
+
+
+    /**
+     * Validates Response Message Level Encryption (MLE) configuration
+     */
+    if (isResponseMleConfigured) {
+        
+        // Check authentication type
+        if (this.authenticationType?.toLowerCase() !== Constants.JWT) {
+            throw new ApiException.ApiException("Response MLE is only supported in JWT auth type", logger);
+        }
+        
+        // Check if either private key or valid file path is provided
+        const hasPrivateKey = !!this.responseMlePrivateKey;
+        const hasValidFilePath = typeof this.responseMlePrivateKeyFilePath === "string" && this.responseMlePrivateKeyFilePath.trim() !== "";
+        
+        if (!hasPrivateKey && !hasValidFilePath) {
+            throw new ApiException.ApiException(
+                "Response MLE is enabled but no private key provided. Either set responseMlePrivateKey object or provide responseMlePrivateKeyFilePath.", 
+                logger
+            );
+        }
+        
+        // Ensure only one private key method is provided
+        if (hasPrivateKey && hasValidFilePath) {
+            throw new ApiException.ApiException(
+                "Both responseMlePrivateKey object and responseMlePrivateKeyFilePath are provided. Please provide only one of them for response mle private key.", 
+                logger
+            );
+        }
+        
+        // Validate file path accessibility if provided and determine if P12/PFX
+        let isP12File = false;
+        if (hasValidFilePath) {
+            try {
+                fs.accessSync(this.responseMlePrivateKeyFilePath, fs.constants.R_OK);
+                const ext = path.extname(this.responseMlePrivateKeyFilePath).toLowerCase();
+                if (!['.p12', '.pfx', '.pem', '.key', '.p8'].includes(ext)) {
+                    throw new ApiException.ApiException(
+                        `Unsupported Response MLE Private Key file format: ${ext}. Supported extensions are: .p12, .pfx, .pem, .key, .p8`, 
+                        logger
+                    );
+                }
+                // Check if it's a P12/PFX file for KID auto-extraction
+                isP12File = ext === '.p12' || ext === '.pfx';
+            } catch (err) {
+                const errorType = err.code === 'ENOENT' ? 'does not exist' : 'is not readable';
+                throw new ApiException.ApiException(
+                    `Invalid responseMlePrivateKeyFilePath ${errorType}: ${this.responseMlePrivateKeyFilePath} (${err.message})`, 
+                    logger
+                );
+            }
+        }
+        
+        // Validate KID - only required for non-P12/PFX files
+        // P12/PFX files support auto-extraction of KID in MLEUtility.js
+        if (!isP12File) {
+            if (typeof this.responseMleKID !== "string" || !this.responseMleKID?.trim()) {
+                throw new ApiException.ApiException(
+                    "responseMleKID is required when response MLE is enabled for non-P12/PFX files.", 
+                    logger
+                );
+            }
+        }
+    }
+    /**
+     * This method is to log all merchantConfic properties 
+     * excluding HideMerchantConfigProperies defined in Constants
+     * 
+     * @param {*} merchantConfig 
+     */
+    MerchantConfig.prototype.getAllProperties = function getAllProperties(merchantConfig) {
+        var hiddenProperties = Constants.HideMerchantConfigProps;
+        var hiddenPropertiesArray = [];
+        hiddenProperties.toString().split(',').forEach(function (each) {
+            hiddenPropertiesArray.push(each.trim());
+        });
+
+        const filteredMerchantConfig = {};
+        for (key in merchantConfig) {
+            if (!hiddenPropertiesArray.includes(key)) {
+                filteredMerchantConfig[key] = merchantConfig[key];
+            }
+        }
+
+        return filteredMerchantConfig;
+    }
+    if (!this.logConfiguration.isExternalLoggerSet) {
+        logger.clear();
+    }
+}
+
+function validateAndSetMapToControlMLEonAPI(mapFromConfig) {
+    let tempMap;
+    var logger = Logger.getLogger(this, 'MerchantConfig');
+
+    // Validating only type of keys and values in the map.
+    if (mapFromConfig === null) {
+        ApiException.ApiException("Unsupported null value to mapToControlMLEonAPI in merchantConfig. Expected map<String, String> which corresponds to <'apiFunctionName','flagForRequestMLE::flagForResponseMLE'> as dataType for field.", logger);
+    }
+    if (typeof (mapFromConfig) !== "map" && typeof (mapFromConfig) !== "object") {
+        ApiException.ApiException("Unsupported datatype for field mapToControlMLEonAPI. Expected Map<String, String> which corresponds to <'apiFunctionName','flagForRequestMLE::flagForResponseMLE'> as dataType for field but got: " + typeof (mapFromConfig), logger);
+    }
+    if (typeof (mapFromConfig) === "object") {
+        for (const[_, value] of Object.entries(mapFromConfig)) {
+            if ((typeof (value) !== "string" && typeof (value) !== "boolean")) {
+                ApiException.ApiException("Unsupported datatype for field mapToControlMLEonAPI. Expected Map<String, String> which corresponds to <'apiFunctionName','flagForRequestMLE::flagForResponseMLE'> as dataType for field but got: " + typeof (value), logger);
+            }
+        }
+        tempMap = new Map(Object.entries(mapFromConfig));
+    } else {
+        mapFromConfig.forEach((value, key) => {
+            if (typeof (key) !== "string" || (typeof (value) !== "string" && typeof (value) !== "boolean")) {
+                ApiException.ApiException("Unsupported datatype for field mapToControlMLEonAPI. Expected Map<String, String> which corresponds to <'apiFunctionName','flagForRequestMLE::flagForResponseMLE'> as dataType for field but got: " + typeof (value), logger);
+            }
+        });
+        tempMap = mapFromConfig;
+    }
+
+
+    // Validating actual values in the map and setting internal maps for request and response MLE control.
+    this.internalMapToControlRequestMLEonAPI = new Map();
+    this.internalMapToControlResponseMLEonAPI = new Map();
+
+    for (const[apiFunctionName, configValue] of tempMap) {
+        const configString = String(configValue);
+        var config = Utility.ParseMLEConfigString(configString, logger);
+        logger.debug(`For apiFunctionName: ${apiFunctionName}, parsed config is: `, config);
+        if (config.requestMLE !== undefined) {
+            this.internalMapToControlRequestMLEonAPI.set(apiFunctionName, config.requestMLE);
+        }
+        if (config.responseMLE !== undefined) {
+            this.internalMapToControlResponseMLEonAPI.set(apiFunctionName, config.responseMLE);
+        }
+    }
+}
+
+
+
+module.exports = MerchantConfig;
