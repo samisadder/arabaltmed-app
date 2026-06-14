@@ -140,6 +140,15 @@ export default function Layout({ children, title }) {
           >
             <span>📄</span> Invoices
           </NavLink>
+          <NavLink
+            to="/admin/settings"
+            style={({ isActive }) => ({
+              ...s.navItem,
+              ...(isActive ? s.navItemActive : {}),
+            })}
+          >
+            <span>⚙️</span> Settings
+          </NavLink>
         </nav>
         <div style={s.sidebarBottom}>
           {adminName && <p style={s.adminName}>{adminName}</p>}

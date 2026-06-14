@@ -178,6 +178,11 @@ export default function InvoiceDetail() {
         </div>
         <div style={s.actions}>
           <button style={s.btn()} onClick={() => navigate('/admin/dashboard')}>← Back</button>
+          {invoice.status !== 'void' && (
+            <button style={s.btn()} onClick={() => window.open(`/invoice/${invoice.public_token}`, '_blank')}>
+              👁 Preview
+            </button>
+          )}
           {canSend && (
             <button style={s.btn('primary')} onClick={handleSend} disabled={actionLoading}>
               {actionLoading ? 'Sending…' : isSent ? '↺ Resend Invoice' : '✉ Send Invoice'}

@@ -66,6 +66,11 @@ export default function Dashboard() {
     });
   }
 
+  function previewInvoice(inv, e) {
+    e.stopPropagation();
+    window.open(`/invoice/${inv.public_token}`, '_blank');
+  }
+
   async function handleDelete(inv, e) {
     e.stopPropagation();
     if (!window.confirm('Permanently delete this draft invoice? This cannot be undone.')) return;
@@ -138,6 +143,11 @@ export default function Dashboard() {
                   <td style={s.td}><span style={s.badge(inv.status)}>{inv.status}</span></td>
                   <td style={s.td}>{fmtDate(inv.due_date)}</td>
                   <td style={s.td} onClick={e => e.stopPropagation()}>
+                    {inv.status !== 'void' && (
+                      <button style={s.actionBtn} onClick={e => previewInvoice(inv, e)}>
+                        👁 Preview
+                      </button>
+                    )}
                     {inv.status !== 'void' && (
                       <button style={s.actionBtn} onClick={e => copyUrl(inv, e)}>
                         {copying === inv.id ? '✓ Copied' : '🔗 Copy URL'}

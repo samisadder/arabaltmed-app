@@ -56,6 +56,12 @@ async function migrate() {
         sort_order INTEGER DEFAULT 0
       );
 
+      CREATE TABLE IF NOT EXISTS settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,
         invoice_id INTEGER REFERENCES invoices(id),

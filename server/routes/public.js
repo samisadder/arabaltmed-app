@@ -68,7 +68,7 @@ router.get('/invoice/:token', async (req, res) => {
 
 async function handleCaptureContext(req, res) {
   try {
-    if (!isCyberSourceConfigured()) {
+    if (!(await isCyberSourceConfigured())) {
       return res
         .status(502)
         .json({ error: 'Payment gateway is not configured' });

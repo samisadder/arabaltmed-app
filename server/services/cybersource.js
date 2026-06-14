@@ -1,32 +1,43 @@
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import pool from '../db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const CybSdk = require(path.resolve(__dirname, '../../src/index.js'));
 
-function getMerchantConfig() {
+async function getDbSettings() {
+  try {
+    const { rows } = await pool.query('SELECT key, value FROM settings');
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  } catch {
+    return {};
+  }
+}
+
+async function getMerchantConfig() {
+  const db = await getDbSettings();
   return {
     authenticationType: 'http_signature',
     runEnvironment:
-      process.env.CYBERSOURCE_RUN_ENVIRONMENT || 'apitest.cybersource.com',
-    merchantID: process.env.CYBERSOURCE_MERCHANT_ID,
-    merchantKeyId: process.env.CYBERSOURCE_API_KEY_ID,
-    merchantsecretKey: process.env.CYBERSOURCE_SECRET_KEY,
-    logConfiguration: {
-      enableLog: false,
-    },
+      db.CYBERSOURCE_RUN_ENVIRONMENT ||
+      process.env.CYBERSOURCE_RUN_ENVIRONMENT ||
+      'apitest.cybersource.com',
+    merchantID:
+      db.CYBERSOURCE_MERCHANT_ID || process.env.CYBERSOURCE_MERCHANT_ID,
+    merchantKeyId:
+      db.CYBERSOURCE_API_KEY_ID || process.env.CYBERSOURCE_API_KEY_ID,
+    merchantsecretKey:
+      db.CYBERSOURCE_SECRET_KEY || process.env.CYBERSOURCE_SECRET_KEY,
+    logConfiguration: { enableLog: false },
   };
 }
 
-export function isCyberSourceConfigured() {
-  return !!(
-    process.env.CYBERSOURCE_MERCHANT_ID &&
-    process.env.CYBERSOURCE_API_KEY_ID &&
-    process.env.CYBERSOURCE_SECRET_KEY
-  );
+export async function isCyberSourceConfigured() {
+  const config = await getMerchantConfig();
+  return !!(config.merchantID && config.merchantKeyId && config.merchantsecretKey);
 }
 
 function callAsync(fn) {
@@ -43,7 +54,7 @@ function callAsync(fn) {
 }
 
 export async function generateCaptureContext(targetOrigin) {
-  const config = getMerchantConfig();
+  const config = await getMerchantConfig();
   const api = new CybSdk.MicroformIntegrationApi(config);
 
   const request = {
@@ -65,7 +76,8 @@ export async function processPayment({
   expMonth,
   expYear,
 }) {
-  const config = getMerchantConfig();
+  const config = await getMerchantConfig();
+  const db = await getDbSettings();
   const api = new CybSdk.PaymentsApi(config);
 
   const nameParts = (cardholderName || 'Card Holder').trim().split(/\s+/);
@@ -73,12 +85,8 @@ export async function processPayment({
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Customer';
 
   const request = {
-    clientReferenceInformation: {
-      code: invoice.invoice_number,
-    },
-    processingInformation: {
-      capture: true,
-    },
+    clientReferenceInformation: { code: invoice.invoice_number },
+    processingInformation: { capture: true },
     orderInformation: {
       amountDetails: {
         totalAmount: String(Number(invoice.total).toFixed(2)),
@@ -92,12 +100,13 @@ export async function processPayment({
         locality: '.',
         administrativeArea: 'NA',
         postalCode: '00000',
-        country: process.env.CYBERSOURCE_DEFAULT_COUNTRY || 'US',
+        country:
+          db.CYBERSOURCE_DEFAULT_COUNTRY ||
+          process.env.CYBERSOURCE_DEFAULT_COUNTRY ||
+          'US',
       },
     },
-    tokenInformation: {
-      transientTokenJwt: transientToken,
-    },
+    tokenInformation: { transientTokenJwt: transientToken },
   };
 
   const { data, response } = await callAsync((cb) =>

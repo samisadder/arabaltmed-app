@@ -38,6 +38,11 @@ export const api = {
     delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' }),
     send: (id) => request(`/invoices/${id}/send`, { method: 'POST' }),
   },
+
+  settings: {
+    get: () => request('/settings'),
+    update: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  },
 };
 
 export function isLoggedIn() {
