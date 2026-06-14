@@ -84,6 +84,7 @@ async function handleCaptureContext(req, res) {
     }
 
     const origin =
+      req.headers['x-page-origin'] ||
       req.headers.origin ||
       process.env.PUBLIC_DOMAIN ||
       process.env.PUBLIC_INVOICE_DOMAIN ||

@@ -75,7 +75,9 @@ export default function InvoicePay() {
     if (!invoice) return;
     if (!['sent', 'overdue'].includes(invoice.status)) return;
 
-    fetch(`/api/public/invoice/${token}/capture-context`)
+    fetch(`/api/public/invoice/${token}/capture-context`, {
+        headers: { 'X-Page-Origin': window.location.origin },
+      })
       .then((r) => r.json())
       .then((data) => {
         if (data.error) {
@@ -107,7 +109,7 @@ export default function InvoicePay() {
   function initMicroform(captureContext) {
     try {
       const flex = new window.Flex(captureContext);
-      const microform = flex.microform({ styles: microformStyles });
+      const microform = flex.microform('card', { styles: microformStyles });
       microformRef.current = microform;
 
       const numberField = microform.createField('number', { placeholder: 'Card number' });
@@ -554,10 +556,7 @@ const errorBannerStyle = {
 
 const microformStyles = {
   input: {
-    fontSize: '14px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     color: '#111827',
   },
-  ':focus': { outline: 'none' },
   '::placeholder': { color: '#9ca3af' },
 };
