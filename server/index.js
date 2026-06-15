@@ -11,7 +11,7 @@ import settingsRoutes from './routes/settings.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET environment secret is not set. Set it in Replit Secrets before starting the server.');
+  console.error('FATAL: JWT_SECRET is not set. Add JWT_SECRET=<random-string> to your server/.env file before starting the server.');
   process.exit(1);
 }
 
