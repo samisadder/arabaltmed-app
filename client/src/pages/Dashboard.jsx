@@ -47,8 +47,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copying, setCopying] = useState(null);
+  const [resending, setResending] = useState(null);
 
-  const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payments.arabaltmed.com';
+  const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payment.arabaltmed.com';
 
   useEffect(() => {
     api.invoices.list()
@@ -79,6 +80,19 @@ export default function Dashboard() {
       setInvoices(prev => prev.filter(i => i.id !== inv.id));
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleResend(inv, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Resend invoice email to ${inv.client_email}?`)) return;
+    setResending(inv.id);
+    try {
+      await api.invoices.resend(inv.id);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setResending(null);
     }
   }
 
@@ -151,6 +165,11 @@ export default function Dashboard() {
                     {inv.status !== 'void' && (
                       <button style={s.actionBtn} onClick={e => copyUrl(inv, e)}>
                         {copying === inv.id ? '✓ Copied' : '🔗 Copy URL'}
+                      </button>
+                    )}
+                    {inv.status === 'paid' && (
+                      <button style={s.actionBtn} onClick={e => handleResend(inv, e)} disabled={resending === inv.id}>
+                        {resending === inv.id ? '…' : '↺ Resend'}
                       </button>
                     )}
                     {inv.status === 'draft' && (
