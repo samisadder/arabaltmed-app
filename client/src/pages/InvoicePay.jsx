@@ -459,7 +459,7 @@ function Header() {
         ArabAltMed
       </div>
       <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-        payments.arabaltmed.com
+        payment.arabaltmed.com
       </div>
     </div>
   );
