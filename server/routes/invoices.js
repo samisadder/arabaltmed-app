@@ -93,7 +93,12 @@ router.get('/:id', async (req, res) => {
       [req.params.id]
     );
 
-    res.json({ invoice: inv.rows[0], items: items.rows });
+    const payments = await client.query(
+      'SELECT id, amount, currency, transaction_id, status, created_at FROM payments WHERE invoice_id = $1 ORDER BY created_at ASC',
+      [req.params.id]
+    );
+
+    res.json({ invoice: inv.rows[0], items: items.rows, payments: payments.rows });
   } finally {
     client.release();
   }
@@ -215,7 +220,7 @@ router.post('/:id/send', async (req, res) => {
       [req.params.id]
     );
 
-    const publicDomain = process.env.PUBLIC_DOMAIN || process.env.PUBLIC_INVOICE_DOMAIN || 'https://payments.arabaltmed.com';
+    const publicDomain = process.env.PUBLIC_DOMAIN || process.env.PUBLIC_INVOICE_DOMAIN || 'https://payment.arabaltmed.com';
     const publicUrl = `${publicDomain}/invoice/${invoice.public_token}`;
 
     const html = buildInvoiceEmail({ invoice, items: items.rows, publicUrl });
@@ -240,6 +245,53 @@ router.post('/:id/send', async (req, res) => {
     `, [req.params.id]);
 
     res.json({ invoice: { ...updated.rows[0], client_name: invoice.client_name, client_email: invoice.client_email } });
+  } finally {
+    dbClient.release();
+  }
+});
+
+router.post('/:id/resend', async (req, res) => {
+  const dbClient = await pool.connect();
+  try {
+    const invResult = await dbClient.query(`
+      SELECT i.*, c.name AS client_name, c.email AS client_email
+      FROM invoices i
+      JOIN clients c ON c.id = i.client_id
+      WHERE i.id = $1
+    `, [req.params.id]);
+
+    if (!invResult.rows[0]) return res.status(404).json({ error: 'Invoice not found' });
+
+    const invoice = invResult.rows[0];
+
+    if (invoice.status === 'void') {
+      return res.status(400).json({ error: 'Cannot resend a voided invoice.' });
+    }
+
+    const items = await dbClient.query(
+      'SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, id',
+      [req.params.id]
+    );
+
+    const publicDomain = process.env.PUBLIC_DOMAIN || process.env.PUBLIC_INVOICE_DOMAIN || 'https://payment.arabaltmed.com';
+    const publicUrl = `${publicDomain}/invoice/${invoice.public_token}`;
+
+    const html = buildInvoiceEmail({ invoice, items: items.rows, publicUrl });
+
+    try {
+      await sendEmail({
+        to: invoice.client_email,
+        subject: `Invoice ${invoice.invoice_number} from ArabAltMed — $${parseFloat(invoice.total).toFixed(2)}`,
+        html,
+      });
+    } catch (emailErr) {
+      console.error('Resend email error:', emailErr.message);
+      return res.status(502).json({
+        error: `Failed to send email: ${emailErr.message}`,
+      });
+    }
+
+    res.json({ ok: true });
   } finally {
     dbClient.release();
   }
