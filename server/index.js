@@ -1,10 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import invoiceRoutes from './routes/invoices.js';
 import publicRoutes from './routes/public.js';
 import settingsRoutes from './routes/settings.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment secret is not set. Set it in Replit Secrets before starting the server.');
@@ -12,15 +16,24 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3009;
+
+if (process.env.BEHIND_HTTPS_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
+const allowedOrigins = [
+  'http://localhost:5000',
+  'http://0.0.0.0:5000',
+  /\.replit\.dev$/,
+  /\.repl\.co$/,
+];
+if (process.env.CORS_ORIGIN) {
+  allowedOrigins.push(process.env.CORS_ORIGIN);
+}
 
 app.use(cors({
-  origin: [
-    'http://localhost:5000',
-    'http://0.0.0.0:5000',
-    /\.replit\.dev$/,
-    /\.repl\.co$/,
-  ],
+  origin: allowedOrigins,
   credentials: true,
 }));
 
@@ -41,6 +54,14 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, 'localhost', () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
