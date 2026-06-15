@@ -165,9 +165,14 @@ router.post('/invoice/:token/pay', async (req, res) => {
       let message = 'Payment processing failed';
       try {
         const parsed = JSON.parse(cyberErr?.response?.text || '{}');
+        console.error('CyberSource payment error:', JSON.stringify(parsed, null, 2));
         if (parsed.message) message = parsed.message;
         else if (parsed.errorInformation?.message)
           message = parsed.errorInformation.message;
+        if (parsed.details?.length) {
+          const fieldErrors = parsed.details.map((d) => d.field || d.reason).filter(Boolean).join(', ');
+          if (fieldErrors) message += ` (fields: ${fieldErrors})`;
+        }
       } catch {}
       return res.status(502).json({ error: message });
     }
