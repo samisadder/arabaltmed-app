@@ -96,10 +96,10 @@ export async function processPayment({
         firstName,
         lastName,
         email: invoice.client_email,
-        address1: '.',
-        locality: '.',
-        administrativeArea: 'NA',
-        postalCode: '00000',
+        address1: '1 Main St',
+        locality: 'San Jose',
+        administrativeArea: 'CA',
+        postalCode: '95131',
         country:
           db.CYBERSOURCE_DEFAULT_COUNTRY ||
           process.env.CYBERSOURCE_DEFAULT_COUNTRY ||
