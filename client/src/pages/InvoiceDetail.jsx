@@ -70,17 +70,18 @@ export default function InvoiceDetail() {
   const location = useLocation();
   const [invoice, setInvoice] = useState(null);
   const [items, setItems] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payments.arabaltmed.com';
+  const publicDomain = import.meta.env.VITE_PUBLIC_DOMAIN || 'https://payment.arabaltmed.com';
 
   useEffect(() => {
     api.invoices.get(id)
-      .then(d => { setInvoice(d.invoice); setItems(d.items); })
+      .then(d => { setInvoice(d.invoice); setItems(d.items); setPayments(d.payments || []); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
@@ -122,6 +123,20 @@ export default function InvoiceDetail() {
     }
   }
 
+  async function handleResend() {
+    if (!window.confirm(`Resend invoice email to ${invoice.client_email}?`)) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      await api.invoices.resend(id);
+      setToast({ message: `Invoice resent to ${invoice.client_email}`, variant: 'success' });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleVoid() {
     if (!window.confirm('Void this invoice? It will be cancelled and cannot be undone.')) return;
     setActionLoading(true);
@@ -151,6 +166,7 @@ export default function InvoiceDetail() {
   const canSend = ['draft', 'sent', 'overdue'].includes(invoice.status);
   const isSent = invoice.status === 'sent' || invoice.status === 'overdue';
   const isVoidable = ['draft', 'sent', 'overdue'].includes(invoice.status);
+  const isPaid = invoice.status === 'paid';
 
   const statusHistory = [
     { label: 'Created', date: invoice.created_at, color: '#94a3b8' },
@@ -186,6 +202,11 @@ export default function InvoiceDetail() {
           {canSend && (
             <button style={s.btn('primary')} onClick={handleSend} disabled={actionLoading}>
               {actionLoading ? 'Sending…' : isSent ? '↺ Resend Invoice' : '✉ Send Invoice'}
+            </button>
+          )}
+          {isPaid && (
+            <button style={s.btn()} onClick={handleResend} disabled={actionLoading}>
+              {actionLoading ? 'Sending…' : '↺ Resend Email'}
             </button>
           )}
           {isVoidable && (
@@ -257,6 +278,36 @@ export default function InvoiceDetail() {
           </div>
         ))}
       </div>
+
+      {payments.length > 0 && (
+        <div style={s.card}>
+          <p style={s.sectionTitle}>Payment History</p>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Transaction ID</th>
+                <th style={{ ...s.th, textAlign: 'right' }}>Amount</th>
+                <th style={{ ...s.th, textAlign: 'right' }}>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map(pmt => (
+                <tr key={pmt.id}>
+                  <td style={{ ...s.td, fontFamily: 'monospace', fontSize: 12, color: '#475569' }}>
+                    {pmt.transaction_id || '—'}
+                  </td>
+                  <td style={{ ...s.td, textAlign: 'right', fontWeight: 600 }}>
+                    ${parseFloat(pmt.amount).toFixed(2)} {pmt.currency}
+                  </td>
+                  <td style={{ ...s.td, textAlign: 'right', color: '#64748b', fontSize: 12 }}>
+                    {new Date(pmt.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {invoice.status !== 'void' && (
         <div style={s.card}>
