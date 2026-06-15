@@ -91,7 +91,10 @@ async function handleCaptureContext(req, res) {
       'https://payment.arabaltmed.com';
 
     const captureContext = await generateCaptureContext(origin);
-    res.json({ captureContext });
+    const { rows: settingsRows } = await pool.query('SELECT value FROM settings WHERE key=$1', ['CYBERSOURCE_RUN_ENVIRONMENT']);
+    const runEnv = settingsRows[0]?.value || process.env.CYBERSOURCE_RUN_ENVIRONMENT || 'apitest.cybersource.com';
+    const sandbox = runEnv.includes('apitest');
+    res.json({ captureContext, sandbox });
   } catch (err) {
     console.error('GET /public/invoice/:token/capture-context', err);
     let message = 'Failed to initialise payment form';
@@ -162,19 +165,23 @@ router.post('/invoice/:token/pay', async (req, res) => {
       paymentData = result.data;
     } catch (cyberErr) {
       await db.query('ROLLBACK');
+      console.error('CyberSource raw error status:', cyberErr?.status, cyberErr?.message);
+      console.error('CyberSource raw response body:', cyberErr?.response?.text);
       let message = 'Payment processing failed';
+      let reason = null;
       try {
         const parsed = JSON.parse(cyberErr?.response?.text || '{}');
-        console.error('CyberSource payment error:', JSON.stringify(parsed, null, 2));
+        console.error('CyberSource parsed error:', JSON.stringify(parsed, null, 2));
         if (parsed.message) message = parsed.message;
         else if (parsed.errorInformation?.message)
           message = parsed.errorInformation.message;
+        reason = parsed.reason || parsed.errorInformation?.reason || null;
         if (parsed.details?.length) {
           const fieldErrors = parsed.details.map((d) => d.field || d.reason).filter(Boolean).join(', ');
           if (fieldErrors) message += ` (fields: ${fieldErrors})`;
         }
       } catch {}
-      return res.status(502).json({ error: message });
+      return res.status(502).json({ error: message, reason });
     }
 
     const cyberStatus = paymentData?.status || '';
