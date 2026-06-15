@@ -88,7 +88,7 @@ async function handleCaptureContext(req, res) {
       req.headers.origin ||
       process.env.PUBLIC_DOMAIN ||
       process.env.PUBLIC_INVOICE_DOMAIN ||
-      'https://payments.arabaltmed.com';
+      'https://payment.arabaltmed.com';
 
     const captureContext = await generateCaptureContext(origin);
     res.json({ captureContext });
