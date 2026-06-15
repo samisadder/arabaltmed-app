@@ -111,7 +111,7 @@ export default function InvoicePay() {
   function initMicroform(captureContext) {
     try {
       const flex = new window.Flex(captureContext);
-      const microform = flex.microform('card', { styles: microformStyles });
+      const microform = flex.microform({ styles: microformStyles });
       microformRef.current = microform;
 
       const numberField = microform.createField('number', { placeholder: 'Card number' });
