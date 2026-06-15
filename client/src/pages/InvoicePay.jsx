@@ -41,6 +41,7 @@ export default function InvoicePay() {
 
   const [payReady, setPayReady] = useState(false);
   const [flexError, setFlexError] = useState('');
+  const [isSandbox, setIsSandbox] = useState(false);
 
   const [cardholderName, setCardholderName] = useState('');
   const [expMonth, setExpMonth] = useState('');
@@ -84,6 +85,7 @@ export default function InvoicePay() {
           setFlexError(data.error);
           return;
         }
+        if (data.sandbox) setIsSandbox(true);
         loadFlexMicroform(data.captureContext);
       })
       .catch(() => setFlexError('Could not load payment form. Please refresh the page.'));
@@ -173,7 +175,10 @@ export default function InvoicePay() {
       })
         .then((r) => r.json())
         .then((data) => {
-          if (data.error) throw new Error(data.error);
+          if (data.error) {
+            const detail = data.reason ? ` [${data.reason}]` : '';
+            throw new Error(data.error + detail);
+          }
           setSuccess(data);
           setInvoice((prev) => ({ ...prev, status: 'paid', paidAt: new Date().toISOString() }));
         })
@@ -337,6 +342,18 @@ export default function InvoicePay() {
 
             {flexError && (
               <div style={errorBannerStyle}>{flexError}</div>
+            )}
+
+            {isSandbox && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e' }}>
+                <strong>Sandbox mode</strong> — use a CyberSource test card:
+                <span style={{ display: 'block', marginTop: 4, fontFamily: 'monospace' }}>
+                  Visa: 4111 1111 1111 1111 &nbsp;·&nbsp; MC: 5555 5555 5555 4444
+                </span>
+                <span style={{ fontFamily: 'monospace' }}>
+                  Amex: 3782 8224 6310 005 &nbsp;·&nbsp; Any future date, any CVV
+                </span>
+              </div>
             )}
 
             {!flexError && (
