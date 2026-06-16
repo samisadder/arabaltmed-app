@@ -91,10 +91,21 @@ async function handleCaptureContext(req, res) {
       'https://payment.arabaltmed.com';
 
     const captureContext = await generateCaptureContext(origin);
+
+    // Extract clientLibrary URL from the capture context JWT so the browser
+    // loads exactly the right Flex version for this environment.
+    let clientLibrary = null;
+    try {
+      const payload = JSON.parse(
+        Buffer.from(captureContext.split('.')[1], 'base64url').toString()
+      );
+      clientLibrary = payload?.ctx?.[0]?.data?.clientLibrary || null;
+    } catch {}
+
     const { rows: settingsRows } = await pool.query('SELECT value FROM settings WHERE key=$1', ['CYBERSOURCE_RUN_ENVIRONMENT']);
     const runEnv = settingsRows[0]?.value || process.env.CYBERSOURCE_RUN_ENVIRONMENT || 'apitest.cybersource.com';
     const sandbox = runEnv.includes('apitest');
-    res.json({ captureContext, sandbox });
+    res.json({ captureContext, sandbox, clientLibrary });
   } catch (err) {
     console.error('GET /public/invoice/:token/capture-context', err);
     let message = 'Failed to initialise payment form';
