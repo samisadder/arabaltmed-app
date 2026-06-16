@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
-const FLEX_JS_URL = 'https://flex.cybersource.com/microform/bundle/v2/flex-microform.min.js';
+const FLEX_JS_FALLBACK = 'https://flex.cybersource.com/microform/bundle/v2/flex-microform.min.js';
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -86,19 +86,21 @@ export default function InvoicePay() {
           return;
         }
         if (data.sandbox) setIsSandbox(true);
-        loadFlexMicroform(data.captureContext);
+        loadFlexMicroform(data.captureContext, data.clientLibrary);
       })
       .catch(() => setFlexError('Could not load payment form. Please refresh the page.'));
   }, [invoice]);
 
-  function loadFlexMicroform(captureContext) {
+  function loadFlexMicroform(captureContext, clientLibrary) {
+    const flexUrl = clientLibrary || FLEX_JS_FALLBACK;
+
     if (flexScriptLoaded.current) {
       initMicroform(captureContext);
       return;
     }
 
     const script = document.createElement('script');
-    script.src = FLEX_JS_URL;
+    script.src = flexUrl;
     script.async = true;
     script.onload = () => {
       flexScriptLoaded.current = true;
