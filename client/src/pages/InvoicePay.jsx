@@ -346,30 +346,6 @@ export default function InvoicePay() {
               <div style={errorBannerStyle}>{flexError}</div>
             )}
 
-            {isSandbox && (
-              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e' }}>
-                <strong>Sandbox mode</strong> — use a CyberSource test card (any future expiry):
-                <table style={{ marginTop: 6, borderCollapse: 'collapse', width: '100%' }}>
-                  <tbody>
-                    {[
-                      ['Visa', '4111 1111 1111 1111', 'any'],
-                      ['Visa', '4622 9431 2701 3705', '838'],
-                      ['Visa', '4622 9431 2701 3721', '258'],
-                      ['Mastercard', '5555 5555 5555 4444', 'any'],
-                      ['Mastercard', '2222 4200 0000 1113', 'any'],
-                      ['Amex', '3782 8224 6310 005', 'any'],
-                      ['Discover', '6011 1111 1111 1117', 'any'],
-                    ].map(([brand, num, cvv]) => (
-                      <tr key={num}>
-                        <td style={{ paddingRight: 8, color: '#78350f', width: 90 }}>{brand}</td>
-                        <td style={{ fontFamily: 'monospace', paddingRight: 8 }}>{num}</td>
-                        <td style={{ color: '#78350f' }}>CVV: {cvv}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
 
             {!flexError && (
               <form onSubmit={handlePay} noValidate>
